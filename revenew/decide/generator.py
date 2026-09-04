@@ -38,9 +38,9 @@ from revenew.models import (
     OpportunityType,
     Segment,
 )
-from revenew.settings import PolicyConfig
+from revenew.settings import CLAUDE_MODEL, PolicyConfig
 
-MODEL = "claude-sonnet-5"
+MODEL = CLAUDE_MODEL
 MAX_TOKENS = 1024
 
 CANDIDATE_SET_SCHEMA = CandidateSet.model_json_schema()
