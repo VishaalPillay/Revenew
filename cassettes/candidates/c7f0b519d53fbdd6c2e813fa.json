@@ -1,0 +1,66 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 18% on SKU-F01 for returning shoppers",
+      "discount_pct": 0.18,
+      "discount_amount": null,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "Cross‑sell data shows lapsing customers are likely to purchase SKU‑F01 again; an 18% discount nudges them back."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "$50 off your next order of SKU-F01",
+      "discount_pct": null,
+      "discount_amount": 50.0,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "A $50 coupon on a popular SKU gives immediate savings, encouraging lapsing customers to return."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle SKU‑A02 with SKU‑C02 and save 12%",
+      "discount_pct": 0.12,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02"
+      ],
+      "rationale": "Bundling complementary SKUs leverages affinity and increases basket size while keeping the discount within 20%."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 50 loyalty points when you buy SKU‑F02",
+      "discount_pct": null,
+      "discount_amount": 50.0,
+      "skus": [
+        "SKU-F02"
+      ],
+      "rationale": "Rewarding lapsing customers with points for a high‑margin SKU boosts engagement and future spend."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Add SKU‑C03 to your cart now for a better deal",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C03"
+      ],
+      "rationale": "A zero‑cost reminder prompts quick action without affecting margins."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle SKU‑C03 with SKU‑F01 and save 10%",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C03",
+        "SKU-F01"
+      ],
+      "rationale": "Combining two affinity SKUs into a bundle offers a 10% savings that aligns with cross‑sell goals."
+    }
+  ]
+}

@@ -58,7 +58,32 @@ from revenew.settings import GROQ_MODEL, PolicyConfig
 MODEL = GROQ_MODEL
 MAX_TOKENS = 4096  # 5-8 candidates with headlines + rationales truncate at 1024
 
-CANDIDATE_SET_SCHEMA = CandidateSet.model_json_schema()
+
+def _require_every_property(schema: dict | list) -> dict | list:
+    """Groq's (and OpenAI's) `strict: true` json_schema mode requires EVERY
+    property of an object to be listed in `required`, with optionality
+    expressed through the property's own type (`anyOf: [..., {"type":
+    "null"}]`) rather than omission -- the opposite of Pydantic's default,
+    which only lists fields that have no default. Discovered against the
+    live API, not by inspection: `model_json_schema()` on `Candidate` leaves
+    `discount_amount`/`discount_pct`/`skus` out of `required` (they all have
+    defaults), and Groq's API rejects that shape outright with a 400 before
+    ever running inference -- the exact three field names it lists as
+    missing. Recurses into `$defs` since `Candidate`, nested under
+    `CandidateSet`, has the same requirement.
+    """
+    if isinstance(schema, dict):
+        if schema.get("type") == "object" and "properties" in schema:
+            schema["required"] = list(schema["properties"].keys())
+        for value in schema.values():
+            _require_every_property(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _require_every_property(item)
+    return schema
+
+
+CANDIDATE_SET_SCHEMA = _require_every_property(CandidateSet.model_json_schema())
 
 SYSTEM_PROMPT = """You are composing commercial offers for an e-commerce merchant.
 

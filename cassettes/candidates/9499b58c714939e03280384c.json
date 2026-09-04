@@ -1,0 +1,64 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Enjoy 15% off on your favorite SKUs!",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02"
+      ],
+      "rationale": "A moderate discount nudges lapsing customers back to purchase, balancing margin with winback incentive."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹150 off your next order over ₹500",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "Affordable coupon encourages re-engagement without eroding margin."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle Deal: Buy SKU-C03, get 10% off on SKU-C02",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C03",
+        "SKU-C02"
+      ],
+      "rationale": "Cross-selling boosts basket size for lapsing customers."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹200 Loyalty Credit with your next purchase",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [
+        "SKU-F02"
+      ],
+      "rationale": "Rewarding loyalty builds future spend while reactivating dormant shoppers."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you – your cart is waiting",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Zero-cost reminder nudges lapsing customers back to shop."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "First-time 20% off on SKU-F02 – act now!",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-F02"
+      ],
+      "rationale": "Maximum allowed discount captures high-value SKUs to trigger winback."
+    }
+  ]
+}

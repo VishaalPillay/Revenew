@@ -155,30 +155,9 @@ to the population size rather than inheriting the single-campaign default.
 
 ## Known limitations, disclosed rather than hidden
 
-**No cassette has been recorded against a real LLM yet (see bugs #11-12
-below).** `CandidateGenerator` now supports genuine multi-candidate
-generation via Groq, cached per cohort, with `off`/`record`/`replay` modes
-and 12 tests passing against fakes -- but every full replay run to date still
-predates that fix, and no `--llm record` run has completed against the real
-API (blocked first on Anthropic credit, now on adding `GROQ_API_KEY`). Until
-that run happens, every existing regret curve and posterior-recovery table
-reports on the single-candidate fallback path's greedy argmax, not genuine
-Thompson-sampled exploration. `BanditScorer.choose()` is built, tested, and
-correctly implements Thompson sampling with cold-start pooling (verified
-directly: cold cells borrow cross-segment evidence, cells past 20
-observations detach and use their own posterior) -- what's unverified is how
-the numbers look once a real, multi-candidate LLM is actually in the loop.
-The regret/recovery machinery (`harness/regret.py`) is verified correct via
-two independent implementations (Python and SQL) agreeing exactly on a real
-run (1,002,998.2 == 1,002,998.2 cumulative regret, 8,959/8,959 matching
-decision rows) -- that verification is unaffected by which policy produced
-the decisions being graded.
-
-**`LiveAdapter` (Razorpay) has never been exercised against a real
-credential or the live API.** The `create_offer` -> Payment Link mapping is
-an explicit, stated assumption (SYSTEM_DESIGN.md section 11), not a verified
-integration. `FixtureAdapter` is what every test and every replay run
-actually exercises.
+`FixtureAdapter` is still what every replay run exercises -- `LiveAdapter`
+is opt-in, never the default -- but it has now been verified against the real
+API at least once; see bug #14.
 
 **Webhook signature verification is not implemented.** The exact Razorpay
 webhook payload shape and signing header are labelled UNKNOWN in the
@@ -259,3 +238,224 @@ to the 20b variant. `GROQ_API_KEY` still needs to be added to `.env` before
 the actual cassette-recording run can happen -- the generator, cassette, and
 all 12 of `tests/test_generator.py`'s cases are verified against fakes, but
 no cassette has been recorded against the real API yet.
+
+## 13. Groq's `strict: true` rejected the schema outright -- every real call
+silently degraded to the template shelf
+
+Found the moment `GROQ_API_KEY` was added and the first real `--llm record`
+run was attempted: every single decision in a 200-customer/5-day smoke run
+came back with exactly one candidate and propensity 1.0 -- i.e. bug #11 all
+over again, despite #11's fix being fully in place and unit-tested. The
+`except Exception: return _template_fallback(...)` branch in `_call()` (the
+"connectivity/timeout/API error -> degrade" path, correct behaviour for what
+it's meant to catch) was silently swallowing a completely different failure:
+calling `_call()` directly, bypassing the try/except, surfaced
+
+    groq.BadRequestError: 400 - invalid JSON schema for response_format:
+    'propose_candidates': /$defs/Candidate/required: `required` is required
+    to be supplied and to be an array including every key in properties. The
+    following properties must be listed in `required`: discount_amount,
+    discount_pct, skus
+
+Groq's (and OpenAI's) `strict: true` json_schema mode requires EVERY property
+of EVERY object to appear in `required`, with optionality expressed through
+the property's own type (`anyOf: [..., {"type": "null"}]`) rather than
+omission. Pydantic's `model_json_schema()` does the opposite by default: it
+only lists fields with no default, so `discount_pct`/`discount_amount`/
+`skus` (all `Optional` with defaults on `Candidate`) were missing, and the
+API rejected the request before running any inference at all -- every call,
+every time, which is exactly why it looked identical to bug #11 from the
+outside. None of `tests/test_generator.py`'s 12 fake-client cases caught
+this because a fake client never runs Groq's own schema validator; only a
+live call does. Fixed with `_require_every_property()`, a small recursive
+transform over the generated schema (including nested `$defs`) run once at
+import time, and hardened with a new, fake-free regression test
+(`test_candidate_set_schema_lists_every_property_as_required`) that checks
+the same invariant statically -- it would have caught this without ever
+touching the network.
+
+Verified against the real API afterward, not just re-run past the error: a
+direct `_call()` returned a genuine 6-7 candidate response spanning multiple
+action families with grounded, cohort-specific rationale text, which then
+parsed cleanly through `CandidateSet.model_validate`. A full canonical
+30-day/3,000-customer `--llm record` run followed (16 distinct cohorts, one
+real API call each, 64.7s total -- the cassette from the smoke run supplied
+15 of those 16 for free), then two independent `--llm replay --strict-replay`
+runs of the identical seed were diffed directly: `posteriors` tables
+identical, all 55,535 decisions identical when keyed by the content-addressed
+`opportunity_id` (not `decision_id`, which is intentionally a fresh UUID per
+run -- see bug #8), all 70,133 outcomes identical. Propensity across the
+1,857 executed decisions now spans 256 distinct values from 0.030 to 0.673
+(mean 0.425), and all 5 action families are chosen across all 4 segments --
+bug #11 is closed for real, not just in unit tests.
+
+**A separate, non-bug observation surfaced by this same run, worth recording
+because it shapes how the regret curve should be read:** of the 55,535
+treatment-arm decisions in the 30-day run, 53,678 (96.7%) are `no_action` /
+`all_candidates_invalid`, and every single one of those is blocked on
+`cooldown_days` + `max_offers_per_customer_per_month` together, never on a
+discount-cap or budget violation. This is `EnvelopeValidator` working
+correctly, not an envelope bug -- but it is a real property of running a
+30-day replay against `DEFAULT_POLICY`'s `cooldown_days=30`,
+`max_offers_per_customer_per_month=1` over a fixture population whose order
+history is fixed at generation time (no new orders are created from a
+conversion during replay, so a customer's detected segment barely moves
+inside 30 days). The practical effect: most customers who get one offer
+early in the run are then correctly cooldown-blocked for the rest of it, so
+the majority of "decisions" the regret curve grades are `no_action` outcomes
+graded against `BASELINE`, not genuine bandit choices -- a real dynamic, but
+one that dilutes how informative the regret curve's slope is about bandit
+learning specifically, since so much of the run's decision volume never
+reaches `BanditScorer.choose()` at all. Not fixed here -- `cooldown_days` and
+`max_offers_per_customer_per_month` are policy values, not bugs, and
+loosening either is a product decision, not a code change to make
+unilaterally.
+
+## 14. `LiveAdapter` would have crashed on its very first real call
+
+Found by tracing the installed `razorpay` SDK before ever making a live call
+-- the same discipline as bug #12, applied before the fact this time rather
+than after a confusing symptom. `LiveAdapter.create_offer`/`create_payment_link`
+called `self._client.payment_link.create(payload, idempotency_key=idempotency_key)`,
+on the assumption the SDK would turn that kwarg into a dedup header. Reading
+`razorpay.resources.payment_link.PaymentLink.create` -> `Resource.post_url`
+-> `Client.post` -> `Client.request` showed every one of those forwards
+unrecognized kwargs straight through, ending at
+`getattr(self.session, method)(url, auth=..., verify=..., **options)` --
+i.e. `requests.Session.post(..., idempotency_key=...)`, which `requests` does
+not accept. Confirmed live, not just by reading: a direct call with that
+exact kwarg raised `TypeError: Session.request() got an unexpected keyword
+argument 'idempotency_key'` immediately, before any network request was
+even attempted.
+
+Three of this project's own tests exercised `LiveAdapter` and all three
+passed anyway, which is the real lesson here: each one mocks
+`adapter._client.payment_link.create` with a fake shaped
+`def fake(payload, idempotency_key=None)` -- a signature that *accepts* the
+exact keyword the real SDK rejects. A mock more permissive than the thing it
+stands in for is worse than no mock, because it certifies behavior the real
+dependency doesn't have. Fixed by dropping the kwarg from both call sites
+(it was never going to work) and tightening all three fakes to
+`def fake(payload)`, so passing it back in the future raises the identical
+`TypeError` class these tests are meant to guard against, not silently pass.
+
+While tracing this, tested whether the header form actually works instead --
+`headers={"X-Razorpay-Idempotency-Key": ...}` -- since the SDK does correctly
+route a `headers` kwarg through to the request. It didn't: two live calls
+with an identical key and identical payload created two distinct payment
+links (`plink_TXu1iO9ysEroc1` and `plink_TXu1iqsLHYpjKP`). Razorpay's Payment
+Links API does not deduplicate on this, at least not via this header name --
+official docs on the exact header returned 404 on every plausible path tried,
+so this is reported as an empirical finding, not a documented one. It doesn't
+weaken the actual safety property: `execute_decision` already checks
+`executions.idempotency_key` (UNIQUE) before ever calling the adapter, and it
+is the sole call site (see `revenew/decide/trace.py`-style single-writer
+discipline applied to `revenew/execute/razorpay.py`), so a redelivered
+request never reaches the network a second time regardless of what the
+provider does or doesn't support. Every docstring that claimed otherwise
+(`idempotency_key_for`, the module docstring, one test's docstring) has been
+corrected; SYSTEM_DESIGN.md section 11's assumption ledger now carries both
+the confirmed payload shape and the rejected idempotency-header claim
+explicitly, rather than leaving the original ASSUMPTION row looking settled
+when only half of it was ever checked.
+
+Verified end to end after the fix: a real `create_offer` call against
+test-mode credentials succeeded (`status="sent"`, a genuine `plink_...`
+reference), now runs as `test_live_adapter_create_offer_against_real_razorpay_test_mode`
+-- gated on `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` being present so it skips
+cleanly (not hidden, not hardcoded off) on a machine without credentials,
+and is the one test in the suite that touches the real network.
+
+## 15. `SegmentLift.is_significant` broke JSON serialization the moment a
+real lift was significant
+
+Found by building the read API (stage 3: JSON endpoints + `revenew` CLI)
+and actually running `revenew report --json` against the real 30-day
+replay's data, rather than against a hand-built fixture: it crashed with
+`TypeError: Object of type bool is not JSON serializable` -- a genuinely
+confusing message, because `bool` unqualified sounds like it must mean
+Python's own builtin, which every `json.dumps` call handles natively.
+
+`SegmentLift.is_significant` is `-> bool` by its own type annotation but its
+body is a bare comparison: `self.ci_low > 0 or self.ci_high < 0`.
+`welch_interval` (`revenew/measure/incremental.py`) computes `ci_low`/
+`ci_high` via numpy/scipy, so both are `numpy.float64`, and a `numpy.float64`
+comparison returns `numpy.bool` -- a real, distinct type from Python's
+`bool` (it cannot subclass it; `bool` cannot be subclassed at all) and one
+the standard `json` module has never supported. `numpy.float64` itself
+serializes fine because it IS a `float` subclass, which is exactly why only
+`is_significant` broke and every other numeric field on the same object
+didn't -- a plausible reason this went unnoticed through every previous test
+and every dashboard render (Jinja2's `{{ }}` just calls `str()`, which numpy
+bools handle fine; only strict JSON serialization cares about the type,
+not just the value).
+
+Fixed at the source, not downstream: `return bool(self.ci_low > 0 or
+self.ci_high < 0)`, so the property's own declared return type is actually
+true at runtime for every caller, not just the ones that happen to only
+check truthiness. Regression test
+(`tests/test_incremental.py`) checks `type(...) is bool` explicitly rather
+than `isinstance` -- `isinstance(numpy.bool(True), bool)` is also `False`,
+so either assertion would have caught the original bug, but `type() is`
+is the stricter, more literal statement of the actual contract being
+protected. A third test builds a `SegmentLift` from `welch_interval`'s own
+real return values (not a hand-constructed `numpy.float64`) and round-trips
+it through `json.dumps`, matching the exact call path that surfaced this
+against real data.
+
+## 16. The webhook handler had been rejecting every real Razorpay delivery,
+looking for a field that doesn't exist
+
+SYSTEM_DESIGN.md's assumption ledger flagged the exact webhook payload shape
+as UNKNOWN from the start, precisely because shipping a guessed verifier
+would be worse than an honest gap -- but the ORIGINAL code had already
+guessed at something else, quietly: `payload.get("id") or
+payload.get("event_id")`, used to dedupe redelivered webhooks. No test ever
+caught this because no test had a real payload to check it against.
+
+Captured one for real: exposed the local server through a tunnel, registered
+it as a webhook URL in the Razorpay dashboard, and completed a test-mode
+payment (which itself failed for an unrelated reason -- Razorpay's checkout
+flagged a generic Visa test card as an international card the merchant
+account doesn't accept -- but a `payment.failed` event is just as real a
+delivery as a `payment.captured` one for this purpose). The real envelope:
+
+```json
+{"entity":"event","account_id":"acc_...","event":"payment.failed",
+ "contains":["payment"],"payload":{"payment":{"entity":{...}}},
+ "created_at":1788522184}
+```
+
+There is no `id` or `event_id` field anywhere in that body. Every one of the
+three real deliveries captured had been rejected by the running server with
+`400 {"error": "missing event id"}` -- confirmed directly in ngrok's request
+inspector, which shows the exact response the server sent back. The real
+per-delivery identifier is the `X-Razorpay-Event-Id` HTTP header, sent
+alongside the body, never inside it. This is exactly the failure mode the
+UNKNOWN label was guarding against, except it had already happened silently
+on the dedup path rather than the (correctly unimplemented) signature path.
+
+While capturing this, also captured `X-Razorpay-Signature` and verified the
+signing scheme directly rather than trusting a remembered pattern: computed
+`hmac.new(secret, raw_body, hashlib.sha256).hexdigest()` against the real
+`(body, signature)` pair using the actual webhook secret configured in the
+Razorpay dashboard, and it matched byte-for-byte on the first attempt. Fixed
+both issues together in `revenew/api/webhooks.py`: dedup now reads
+`X-Razorpay-Event-Id`, and signature verification is implemented for real
+using `hmac.compare_digest` (not `==`, which leaks timing information a
+forger could exploit to recover the correct signature byte by byte). A
+placeholder secret (still `.env.example`'s `your_webhook_secret_here`, or
+unset) degrades to accept-with-a-printed-warning rather than either
+hard-failing every webhook before setup is complete or silently accepting
+forever with no signal that verification is off.
+
+`tests/test_webhooks.py` replays the exact captured bytes -- not a
+reconstructed approximation -- through the real endpoint via FastAPI's
+`TestClient`, and asserts it is now accepted. Every version of this handler
+before today's fix would have rejected that exact request. Also covers:
+redelivery of the same event id is a no-op; a tampered body fails signature
+verification even though the signature string is unchanged; a wrong
+configured secret is rejected the same as a forgery, since the server can't
+tell them apart; a missing `X-Razorpay-Event-Id` header is rejected; and the
+placeholder-secret path still accepts an unsigned request, deliberately,
+during setup.

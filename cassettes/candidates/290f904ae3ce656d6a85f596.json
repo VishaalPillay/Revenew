@@ -1,0 +1,51 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 15% on SKU-C02 today",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "Cross‑sell SKU-C02 to lapsing customers to re‑engage them and increase basket size."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Rs 100 off your next purchase",
+      "discount_pct": null,
+      "discount_amount": 100.0,
+      "skus": [],
+      "rationale": "Encourages lapsing shoppers to return and buy additional items, boosting cross‑sell revenue."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle SKU-A02 with SKU-F01 & get 10% off",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-F01"
+      ],
+      "rationale": "Pair complementary products to nudge customers toward higher‑value cross‑sell combinations."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn Rs 200 loyalty credit when you buy SKU-C03",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [
+        "SKU-C03"
+      ],
+      "rationale": "Reward lapsing customers with future credit, driving repeat cross‑sell purchases."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Your cart is waiting – complete your purchase now",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A zero‑cost reminder nudges lapsing shoppers back to checkout, improving conversion."
+    }
+  ]
+}

@@ -350,8 +350,9 @@ Nothing in the current design blocks any of these. That is the reason for the
 
 | Claim | Label |
 |---|---|
-| Razorpay exposes test-mode APIs for offers and payment links | **ASSUMPTION** — verify against live docs before writing `LiveAdapter` |
-| Exact webhook event names and payload shape | **UNKNOWN** — must capture real payloads; no schema written until then |
+| Razorpay exposes test-mode APIs for offers and payment links | **CONFIRMED** (2026-09-04) — a real `create_payment_link` call against test-mode credentials succeeded with the assumed `amount`/`currency`/`description` payload shape |
+| Razorpay's Payment Links API deduplicates a client-supplied idempotency key | **REJECTED** — verified live: two identical calls with the same key created two distinct payment links. Dedup is enforced entirely at the application layer (`executions.idempotency_key` UNIQUE, checked before `execute_decision` ever calls the adapter), which is sufficient since that function is the sole call site — see `revenew/execute/razorpay.py` |
+| Exact webhook event names and payload shape | **CONFIRMED** (2026-09-04) — a real test-mode webhook was captured via a tunneled endpoint. Envelope: `{entity:"event", account_id, event, contains:[...], payload:{<entity>:{entity:{...}}}, created_at}`. Two things this corrected: the per-delivery id is the `X-Razorpay-Event-Id` HEADER, not any field in the body (there is none); the signature scheme is `X-Razorpay-Signature` = `hmac_sha256(secret, raw_body).hexdigest()`, verified byte-for-byte against the captured delivery. See `revenew/api/webhooks.py` and ENGINEERING_LOG.md |
 | A payment gateway cannot observe COGS | **FACT** — hence merchant-supplied config |
 | Thompson sampling converges on stationary Bernoulli bandits | **FACT** — standard result |
 | Declared-truth fixtures make regret computable | **FACT** — oracle is known by construction |

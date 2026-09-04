@@ -231,11 +231,58 @@ def _partition(pending: list[PendingResolution], today: int) -> tuple[list[Pendi
     return due, remaining
 
 
-if __name__ == "__main__":
-    import argparse
-
+def run_and_report(
+    *,
+    seed: int = 20260101,
+    n_customers: int = 3000,
+    n_days: int = 30,
+    revenew_db_path: str = "revenew.db",
+    harness_db_path: str = "harness.db",
+    llm_mode: str = "off",
+    cassette_dir: str | None = None,
+    strict_replay: bool = False,
+    export: bool = True,
+) -> ReplayResult:
+    """`run_replay()` plus the summary printout and regret export -- the
+    whole thing the script's own `__main__` block used to do inline. Factored
+    out so `revenew/cli.py`'s `replay` subcommand calls exactly this, not a
+    second copy of the same nine print statements that could drift from what
+    running this module directly prints.
+    """
     from harness.regret import compute_decision_regret, export_to_runtime, posterior_recovery_error
     from revenew.db import connect as rconnect
+
+    r = run_replay(
+        seed=seed, n_customers=n_customers, n_days=n_days,
+        revenew_db_path=revenew_db_path, harness_db_path=harness_db_path, quiet=False,
+        llm_mode=llm_mode, cassette_dir=cassette_dir, strict_replay=strict_replay,
+    )
+    print()
+    print(f"run_id: {r.run_id}")
+    print(f"opportunities detected: {r.opportunities_detected}")
+    print(f"decisions: {r.decisions_executed} executed, {r.decisions_no_action} no_action")
+    print(f"no_action reasons: {r.no_action_reasons}")
+    print(f"outcomes recorded: {r.outcomes_recorded}")
+    print(f"elapsed: {r.elapsed_seconds:.1f}s")
+
+    if export:
+        # A fresh connection: run_replay() has already closed its own. This is
+        # the one-way export described in harness/regret.py -- ground truth is
+        # read here, in harness code, and only the resulting scalars cross
+        # into revenew.db.
+        conn = rconnect(revenew_db_path)
+        regrets = compute_decision_regret(conn)
+        recovery = posterior_recovery_error(conn)
+        export_to_runtime(conn, run_id=r.run_id, regrets=regrets, recovery=recovery)
+        conn.close()
+        final_regret = regrets and sum(x.regret for x in regrets)
+        print(f"regret curve exported: {len(regrets)} decisions, final cumulative regret {final_regret:.1f}" if regrets else "no decisions to export")
+
+    return r
+
+
+if __name__ == "__main__":
+    import argparse
 
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--seed", type=int, default=20260101)
@@ -262,28 +309,9 @@ if __name__ == "__main__":
     )
     args = p.parse_args()
 
-    r = run_replay(
+    run_and_report(
         seed=args.seed, n_customers=args.customers, n_days=args.days,
-        revenew_db_path=args.revenew_db, harness_db_path=args.harness_db, quiet=False,
+        revenew_db_path=args.revenew_db, harness_db_path=args.harness_db,
         llm_mode=args.llm, cassette_dir=args.cassette_dir, strict_replay=args.strict_replay,
+        export=not args.no_export,
     )
-    print()
-    print(f"run_id: {r.run_id}")
-    print(f"opportunities detected: {r.opportunities_detected}")
-    print(f"decisions: {r.decisions_executed} executed, {r.decisions_no_action} no_action")
-    print(f"no_action reasons: {r.no_action_reasons}")
-    print(f"outcomes recorded: {r.outcomes_recorded}")
-    print(f"elapsed: {r.elapsed_seconds:.1f}s")
-
-    if not args.no_export:
-        # A fresh connection: run_replay() has already closed its own. This is
-        # the one-way export described in harness/regret.py -- ground truth is
-        # read here, in harness code, and only the resulting scalars cross
-        # into revenew.db.
-        conn = rconnect(args.revenew_db)
-        regrets = compute_decision_regret(conn)
-        recovery = posterior_recovery_error(conn)
-        export_to_runtime(conn, run_id=r.run_id, regrets=regrets, recovery=recovery)
-        conn.close()
-        final_regret = regrets and sum(x.regret for x in regrets)
-        print(f"regret curve exported: {len(regrets)} decisions, final cumulative regret {final_regret:.1f}" if regrets else "no decisions to export")

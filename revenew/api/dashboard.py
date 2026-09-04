@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from revenew.api.read import router as read_router
 from revenew.api.webhooks import get_conn
 from revenew.api.webhooks import router as webhooks_router
 from revenew.measure.report import build_report
@@ -28,6 +29,7 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 app = FastAPI(title="Revenew")
 app.include_router(webhooks_router)
+app.include_router(read_router)
 
 
 @app.get("/", response_class=HTMLResponse)

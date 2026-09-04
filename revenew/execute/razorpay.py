@@ -1,23 +1,42 @@
 """RazorpayAdapter: one Protocol, two implementations, everything upstream
 identical either way.
 
-`LiveAdapter` targets Razorpay's test-mode Payment Links API. That mapping is
-flagged in SYSTEM_DESIGN.md section 11 as an ASSUMPTION to verify before
-relying on it: Razorpay does not expose a first-class "offer" object, so
-`create_offer` is realized as a Payment Link carrying the discounted amount
-and the offer's headline in its description -- a deliberate adaptation, not a
-literal API this project confirmed against live docs. This machine has no
-Razorpay credential either, so LiveAdapter has never been exercised against
-the real API; only FixtureAdapter is exercised by tests and by replay.
+`LiveAdapter` targets Razorpay's test-mode Payment Links API. That mapping was
+flagged in SYSTEM_DESIGN.md section 11 as an ASSUMPTION pending verification;
+it is now CONFIRMED against a real test-mode call (2026-09-04): Razorpay does
+not expose a first-class "offer" object, so `create_offer` is realized as a
+Payment Link carrying the discounted amount and the offer's headline in its
+description, and that payload shape (`amount`/`currency`/`description`)
+works exactly as assumed.
+
+**What did NOT survive verification: provider-side idempotency.** The
+original code passed `idempotency_key=` as a keyword straight into
+`razorpay.Client().payment_link.create(...)`, on the assumption Razorpay's
+SDK would turn it into a dedup header. Two things were wrong with that,
+found only by tracing the installed SDK and then confirming live: (1) the
+`razorpay` package's `Resource.create(data, **kwargs)` forwards unrecognized
+kwargs all the way to `requests.Session.post(...)`, which does not accept
+`idempotency_key` and raises `TypeError` on the very first call -- this
+would have crashed every real execution attempt, never mind a redelivered
+one; and (2) even routed correctly as a header
+(`headers={"X-Razorpay-Idempotency-Key": ...}`), two live calls with an
+identical key and identical payload created two DIFFERENT payment links --
+Razorpay's Payment Links API does not deduplicate on it. Fixed by dropping
+the kwarg entirely rather than chasing a header name that does nothing on
+this endpoint. This does not weaken the actual guarantee: idempotency here
+was never Razorpay's job to begin with, see `execute_decision` below.
 
 `FixtureAdapter` never makes a network call. It records the attempted call and
 returns a synthetic, deterministic reference -- what every test, the replay
 harness, and a credential-less demo run against.
 
 Every execution attempt is persisted to `executions` regardless of which
-adapter ran it, keyed by `idempotency_key` (UNIQUE in db/schema.sql) -- a
-retried call with the same key is a database no-op on the second attempt, not
-a second charge.
+adapter ran it, keyed by `idempotency_key` (UNIQUE in db/schema.sql).
+`execute_decision` checks for an existing row BEFORE ever calling the
+adapter -- that check, not anything Razorpay does, is what makes a redelivered
+request a database no-op instead of a second real payment link: it is the
+sole call site, so a decision that already has an `executions` row never
+reaches the network a second time regardless of what the provider supports.
 """
 
 from __future__ import annotations
@@ -39,9 +58,10 @@ class RazorpayAdapter(Protocol):
 
 def idempotency_key_for(decision_id: str) -> str:
     """Deterministic per decision: a retry of the same decision reuses the
-    same key, so Razorpay's own idempotency handling (a real feature of their
-    API, keyed on this exact header) absorbs a redelivered request rather than
-    executing it twice."""
+    same key, which is what lets `execute_decision`'s own lookup against
+    `executions.idempotency_key` (UNIQUE) recognize a redelivered request and
+    skip calling the adapter a second time -- see the module docstring for why
+    this, not anything Razorpay does, is the actual dedup mechanism."""
     return f"revenew-{decision_id}"
 
 
@@ -64,9 +84,14 @@ class FixtureAdapter:
 
 
 class LiveAdapter:
-    """Razorpay test-mode Payment Links. UNVERIFIED against live docs or a
-    real credential -- see the module docstring. Retries transient failures
-    with backoff, same idempotency key, per the failure-mode table."""
+    """Razorpay test-mode Payment Links. Verified against a real credential --
+    see the module docstring for what did and didn't survive that. Retries
+    transient failures with backoff, same payload, per the failure-mode
+    table -- `idempotency_key` is accepted (it's part of `RazorpayAdapter`'s
+    shape, and `FixtureAdapter` uses it) but deliberately NOT forwarded to the
+    SDK call: Razorpay's Payment Links endpoint doesn't honor it, and
+    `execute_decision`'s own pre-check is what actually prevents a retry from
+    reaching this method at all for an already-executed decision."""
 
     MAX_RETRIES = 3
     BACKOFF_SECONDS = (0.5, 1.5, 3.0)
@@ -101,9 +126,11 @@ class LiveAdapter:
             "description": spec.headline,
             "notes": {"action_family": spec.action_family.value, "customer_id": spec.customer_id},
         }
-        result = self._with_retry(
-            self._client.payment_link.create, payload, idempotency_key=idempotency_key
-        )
+        # NOT idempotency_key=idempotency_key here -- the razorpay SDK forwards
+        # unrecognized kwargs straight through to requests.Session.post(),
+        # which raises TypeError on it. Confirmed live: it crashed the very
+        # first real call. See the module docstring.
+        result = self._with_retry(self._client.payment_link.create, payload)
         return ExecutionResult(provider_ref=result["id"], status="sent")
 
     def create_payment_link(self, spec: LinkSpec, idempotency_key: str) -> ExecutionResult:
@@ -112,9 +139,8 @@ class LiveAdapter:
             "currency": "INR",
             "description": spec.description,
         }
-        result = self._with_retry(
-            self._client.payment_link.create, payload, idempotency_key=idempotency_key
-        )
+        # See create_offer above: idempotency_key is not forwarded to the SDK.
+        result = self._with_retry(self._client.payment_link.create, payload)
         return ExecutionResult(provider_ref=result["id"], status="sent")
 
 

@@ -19,7 +19,7 @@ import pytest
 
 from revenew.decide.bandit import PosteriorStore
 from revenew.decide.cassette import Cassette, cache_key
-from revenew.decide.generator import CandidateGenerator, CassetteMissError
+from revenew.decide.generator import CANDIDATE_SET_SCHEMA, CandidateGenerator, CassetteMissError
 from revenew.models import CandidateSet, Envelope, OpportunityType, Segment
 from revenew.settings import DEFAULT_POLICY
 
@@ -86,6 +86,46 @@ def _generate(gen: CandidateGenerator, store):
         opportunity_type=OpportunityType.DORMANT_WINBACK, segment=Segment.DORMANT,
         rupees_at_risk=750.0, envelope=ENVELOPE, store=store, policy=DEFAULT_POLICY,
     )
+
+
+# ============================================================= strict schema --
+
+
+def _object_schemas(schema) -> list[dict]:
+    """Every object-type schema reachable from `schema`, including nested
+    `$defs` -- Groq's strict json_schema mode enforces the "every property is
+    required" rule at EVERY level, not just the top one."""
+    found = []
+    if isinstance(schema, dict):
+        if schema.get("type") == "object" and "properties" in schema:
+            found.append(schema)
+        for value in schema.values():
+            found.extend(_object_schemas(value))
+    elif isinstance(schema, list):
+        for item in schema:
+            found.extend(_object_schemas(item))
+    return found
+
+
+def test_candidate_set_schema_lists_every_property_as_required():
+    """Regression for the bug this hardens against: Groq's `strict: true`
+    json_schema mode rejects a schema outright (HTTP 400, before running any
+    inference at all) unless EVERY property of EVERY object -- including
+    `Candidate`, nested under `$defs` -- appears in `required`, with
+    optionality expressed via the property's own `anyOf: [..., {"type":
+    "null"}]` rather than omission. Pydantic's default `model_json_schema()`
+    only lists fields with no default (so `discount_pct`/`discount_amount`/
+    `skus` were missing), which is exactly what a live call against the real
+    API caught and every fake-client test above did not, because none of them
+    exercise Groq's own schema validator. This test does not need a
+    credential or the network -- it checks the same invariant statically."""
+    object_schemas = _object_schemas(CANDIDATE_SET_SCHEMA)
+    assert len(object_schemas) >= 2  # CandidateSet itself, plus Candidate under $defs
+    for obj in object_schemas:
+        assert set(obj["required"]) == set(obj["properties"]), (
+            f"schema titled {obj.get('title')!r} has properties not listed in required: "
+            f"{set(obj['properties']) - set(obj['required'])}"
+        )
 
 
 # ==================================================================== off --

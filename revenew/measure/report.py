@@ -9,6 +9,7 @@ without spinning up a server.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -35,6 +36,24 @@ class Report:
     run_id: str | None = None
     regret_curve: list[dict] = field(default_factory=list)
     posterior_recovery: list[dict] = field(default_factory=list)
+
+
+def lift_to_dict(lift: SegmentLift) -> dict:
+    """JSON-safe shape for one `SegmentLift` -- shared by `revenew/api/read.py`
+    and `revenew/cli.py`'s `report --json`, so the two never quietly diverge
+    on which fields a lift row carries."""
+    return {
+        "segment": lift.segment.value if lift.segment else None,
+        "n_treatment": lift.n_treatment,
+        "n_control": lift.n_control,
+        "mean_treatment": lift.mean_treatment,
+        "mean_control": lift.mean_control,
+        "lift": lift.lift,
+        "ci_low": lift.ci_low,
+        "ci_high": lift.ci_high,
+        "p_value": lift.p_value,
+        "is_significant": lift.is_significant,
+    }
 
 
 def _no_action_reasons(conn: sqlite3.Connection) -> list[dict]:
@@ -101,3 +120,79 @@ def build_report(conn: sqlite3.Connection) -> Report:
         regret_curve=_regret_curve(conn, run_id),
         posterior_recovery=_posterior_recovery(conn, run_id),
     )
+
+
+def get_decision_trace(conn: sqlite3.Connection, decision_id: str) -> dict | None:
+    """The full audit trail for one decision: F9's promise ("every decision's
+    full trace, including the propensity of the chosen arm") finally made
+    retrievable, not just persisted. `None` if no such decision exists.
+
+    One function, two callers -- `revenew/api/read.py`'s `/api/decisions/{id}`
+    and `revenew/cli.py`'s `trace` subcommand both call this, matching the
+    single-source-of-truth pattern the rest of this codebase already uses for
+    `EnvelopeEngine`/`EnvelopeValidator`, `decide_one_opportunity`, and
+    `PosteriorStore.apply_outcome` -- there is no second, HTTP-shaped or
+    CLI-shaped copy of this query to drift out of sync with the other.
+    """
+    decision = conn.execute(
+        "SELECT * FROM decisions WHERE decision_id = ?", (decision_id,)
+    ).fetchone()
+    if decision is None:
+        return None
+
+    opportunity = conn.execute(
+        "SELECT customer_id, window_id, arm, assigned_at FROM opportunities WHERE opportunity_id = ?",
+        (decision["opportunity_id"],),
+    ).fetchone()
+
+    candidates = conn.execute(
+        "SELECT candidate_index, candidate_json, valid, violations_json FROM decision_candidates "
+        "WHERE decision_id = ? ORDER BY candidate_index ASC",
+        (decision_id,),
+    ).fetchall()
+
+    execution = conn.execute(
+        "SELECT execution_id, idempotency_key, provider_ref, status, created_at FROM executions "
+        "WHERE decision_id = ?",
+        (decision_id,),
+    ).fetchone()
+
+    outcome = conn.execute(
+        "SELECT outcome_seq, converted, net_revenue, censored, closed_at FROM outcomes "
+        "WHERE opportunity_id = ?",
+        (decision["opportunity_id"],),
+    ).fetchone()
+
+    return {
+        "decision_id": decision["decision_id"],
+        "opportunity_id": decision["opportunity_id"],
+        "run_id": decision["run_id"],
+        "customer_id": opportunity["customer_id"] if opportunity else None,
+        "window_id": opportunity["window_id"] if opportunity else None,
+        "arm": opportunity["arm"] if opportunity else None,
+        "segment": decision["segment"],
+        "action_family": decision["action_family"],
+        "status": decision["status"],
+        "no_action_reason": decision["no_action_reason"],
+        "propensity": decision["propensity"],
+        "envelope": json.loads(decision["envelope_json"]),
+        "candidates_generated": decision["candidates_generated"],
+        "candidates_valid": decision["candidates_valid"],
+        "candidates": [
+            {
+                "candidate_index": c["candidate_index"],
+                "candidate": json.loads(c["candidate_json"]),
+                "valid": bool(c["valid"]),
+                "violations": json.loads(c["violations_json"]),
+            }
+            for c in candidates
+        ],
+        "chosen_candidate": (
+            json.loads(decision["chosen_candidate_json"])
+            if decision["chosen_candidate_json"]
+            else None
+        ),
+        "execution": dict(execution) if execution else None,
+        "outcome": dict(outcome) if outcome else None,
+        "created_at": decision["created_at"],
+    }

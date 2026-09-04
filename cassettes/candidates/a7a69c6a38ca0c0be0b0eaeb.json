@@ -1,0 +1,72 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off your first order – save while you shop!",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02"
+      ],
+      "rationale": "A 20% discount on a popular item encourages first‑time shoppers to complete their purchase and boosts retention for the over Rs 2000 at‑risk segment."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Rs 200 off on your first order – start savings today!",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02",
+        "SKU-C03",
+        "SKU-F01",
+        "SKU-F02"
+      ],
+      "rationale": "A Rs 200 flat coupon offers immediate value for new shoppers, helping lock in their first purchase and increase retention for high‑risk customers."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Buy any two items, get a third free – explore more with one order!",
+      "discount_pct": null,
+      "discount_amount": 100.0,
+      "skus": [
+        "SKU-C02",
+        "SKU-C03",
+        "SKU-F01"
+      ],
+      "rationale": "A bundle offer gives new customers a tangible incentive to try more items in their first order, increasing value and retention among the high‑risk cohort."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 5% loyalty credit with your first order!",
+      "discount_pct": 0.05,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02",
+        "SKU-C03",
+        "SKU-F01",
+        "SKU-F02"
+      ],
+      "rationale": "Rewarding new shoppers with loyalty credit encourages future repeat purchases, directly supporting first‑order retention for customers at risk of over Rs 2000."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Complete your first order for exclusive rewards.",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A gentle reminder nudges new shoppers to finalize their first purchase, increasing retention for the high‑risk segment."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "10% off your first order – take the first step toward savings!",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "A moderate 10% discount on the first purchase lowers the barrier for new shoppers, helping secure retention among customers with high order value risk."
+    }
+  ]
+}

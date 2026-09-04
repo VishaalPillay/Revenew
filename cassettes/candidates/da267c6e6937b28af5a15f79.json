@@ -1,0 +1,61 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off your next A02 purchase",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02"
+      ],
+      "rationale": "Cross‑sell to dormant customers who previously bought similar items, offering a 15% incentive to return."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Rs200 off orders over Rs500",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Encourage dormant shoppers to make a larger purchase with a straightforward Rs200 coupon that stays below the 500‑rupee cap."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle savings: 10% off C02 & C03 together",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02",
+        "SKU-C03"
+      ],
+      "rationale": "Leverage cross‑sell affinity by bundling complementary SKUs at 10% off, enticing dormant customers to buy both."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 50 loyalty points when you buy F01",
+      "discount_pct": null,
+      "discount_amount": 0.0,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "Reward dormant shoppers with loyalty points to lower future friction and increase repeat intent."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Just a friendly reminder of your favorite products",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A zero‑cost nudge to prompt dormant customers to revisit their preferred items without any price friction."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Rs300 off your next F02 purchase",
+      "discount_pct": null,
+      "discount_amount": 300.0,
+      "skus": [
+        "SKU-F02"
+      ],
+      "rationale": "Target dormant customers with a Rs300 discount on a high‑margin SKU to stimulate a re‑buy while staying under the 500‑rupee cap."
+    }
+  ]
+}

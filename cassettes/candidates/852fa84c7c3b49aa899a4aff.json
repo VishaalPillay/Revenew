@@ -1,0 +1,67 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Unlock 15% off on SKU-C02",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "Cross-sell affinity: customers who browse SKU-C02 often buy SKU-A02; a 15% discount encourages that purchase."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Save ₹50 on your next order",
+      "discount_pct": null,
+      "discount_amount": 50.0,
+      "skus": [],
+      "rationale": "A small cash incentive nudges lapsing customers back into purchasing, aligning with cross-sell affinity."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle deal: Get 10% off when you buy SKU-A02 and SKU-C02 together",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02"
+      ],
+      "rationale": "Cross-selling complementary items boosts average order value."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 150 loyalty credits on your next purchase",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "Loyalty credit incentivizes repeat purchase, reinforcing cross-sell."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you! Explore new arrivals",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Reminder to re-engage lapsing customers."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off SKU-F01 for a limited time",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "Max discount within envelope, encourages purchase of a high-margin item."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Use coupon to get ₹100 off your order",
+      "discount_pct": null,
+      "discount_amount": 100.0,
+      "skus": [],
+      "rationale": "Larger incentive within risk band, increases conversion."
+    }
+  ]
+}

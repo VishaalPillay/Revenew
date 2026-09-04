@@ -36,7 +36,14 @@ class SegmentLift:
 
     @property
     def is_significant(self) -> bool:
-        return self.ci_low > 0 or self.ci_high < 0
+        # bool(...), not the bare comparison: ci_low/ci_high are frequently
+        # numpy.float64 (welch_interval does its arithmetic in numpy/scipy),
+        # and a numpy.float64 comparison returns numpy.bool -- which is NOT a
+        # subclass of Python's bool and is not JSON-serializable, unlike this
+        # property's own declared `-> bool` return type promises. Found via
+        # `revenew report --json`, which is exactly the kind of caller this
+        # type contract exists to keep honest.
+        return bool(self.ci_low > 0 or self.ci_high < 0)
 
 
 def _fetch_revenue(conn: sqlite3.Connection, segment: Segment) -> tuple[np.ndarray, np.ndarray]:

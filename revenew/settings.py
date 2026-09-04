@@ -42,6 +42,12 @@ load_dotenv()
 # that currently honor strict json_schema mode.
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 
+# The literal placeholder .env.example ships, so revenew/api/webhooks.py can
+# tell "a real secret is configured" apart from "still the example string"
+# rather than treating an unfilled-in .env as a configured-but-wrong secret.
+RAZORPAY_WEBHOOK_SECRET_PLACEHOLDER = "your_webhook_secret_here"
+RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+
 
 @dataclass(frozen=True)
 class PolicyConfig:

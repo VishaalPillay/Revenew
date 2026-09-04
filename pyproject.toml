@@ -27,6 +27,9 @@ llm = ["groq>=1.7"]
 razorpay = ["razorpay>=1.4", "httpx>=0.28"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
+[project.scripts]
+revenew = "revenew.cli:main"
+
 [tool.setuptools]
 packages = ["revenew", "revenew.detect", "revenew.route", "revenew.decide",
             "revenew.execute", "revenew.ledger", "revenew.measure", "revenew.api"]

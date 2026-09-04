@@ -1,0 +1,63 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off core items",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-F01"
+      ],
+      "rationale": "New shoppers often buy core items; offering 15% off SKU-A02 and SKU-F01 boosts cross‑sell potential."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Rs 200 off Comfort Bundle",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [
+        "SKU-C02",
+        "SKU-C03"
+      ],
+      "rationale": "Bundling comfort items with a Rs 200 discount encourages new buyers to add complementary products."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Free SKU‑F02 with any SKU‑A02 purchase",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-F02"
+      ],
+      "rationale": "Free SKU‑F02 with any SKU‑A02 purchase nudges new customers to try related accessories."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 100 loyalty points on first purchase",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Granting 100 loyalty points on first purchase builds long‑term engagement for new shoppers."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Check out our top sellers",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A gentle reminder of top sellers keeps new customers engaged without cost."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off SKU‑F01 for new shoppers",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "A maximum 20% off on SKU‑F01 offers the strongest price incentive within limits to convert new shoppers."
+    }
+  ]
+}

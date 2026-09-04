@@ -1,0 +1,52 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Enjoy 15% off on your favorite products",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A 15% discount invites dormant shoppers to return, staying comfortably under the 20% cap while offering a clear price incentive."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Save ₹200 on your next purchase",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "A ₹200 coupon provides immediate savings, encouraging a repeat order without exceeding the ₹500 absolute discount limit."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle two top sellers, get ₹150 off",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "Bundling products with a ₹150 discount promotes cross‑product sales while staying within the envelope’s absolute discount cap."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Add ₹200 loyalty credit to your account",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Offering ₹200 loyalty credit rewards dormant customers, giving them a non‑cash incentive that stays below the risk threshold."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you—click to re‑engage",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A zero‑cost reminder nudge nudges dormant shoppers back without impacting the discount budget."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "Enjoy 20% off on all items",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A 20% discount maximizes the allowed percent while still incentivizing high‑value dormant customers within the envelope."
+    }
+  ]
+}

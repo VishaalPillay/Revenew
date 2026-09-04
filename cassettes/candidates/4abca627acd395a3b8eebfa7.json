@@ -1,0 +1,59 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off your favorite skincare essentials",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "Re-engage dormant customers by offering a meaningful discount on a top-selling item."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 20% on your essential F01 bundle",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "Target high-value customers with the maximum discount to drive quick purchase."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹150 off your next purchase of ₹1,000 or more",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "Encourage larger basket size and increase average order value among lapsing shoppers."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle A02 & F01 for 20% off",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-F01"
+      ],
+      "rationale": "Promote cross-selling while rewarding loyalty with a bundled discount."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 200 loyalty points on return",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Add non-monetary value to re-engage customers and boost long-term retention."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you—shop now for exclusive savings",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Softly remind dormant shoppers of available offers without immediate cost."
+    }
+  ]
+}

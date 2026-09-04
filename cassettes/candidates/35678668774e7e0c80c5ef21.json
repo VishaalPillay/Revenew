@@ -1,0 +1,73 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% Off Your Next Order – Come Back to Savings",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-A02",
+        "SKU-A03",
+        "SKU-C01",
+        "SKU-F02"
+      ],
+      "rationale": "A 15% discount on any of our top products nudges dormant shoppers back, addressing the 1200‑rupee risk band and reigniting engagement."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹300 Coupon for Your Next Purchase",
+      "discount_pct": null,
+      "discount_amount": 300.0,
+      "skus": [
+        "SKU-A01",
+        "SKU-A02",
+        "SKU-A03",
+        "SKU-C01",
+        "SKU-F02"
+      ],
+      "rationale": "A ₹300 off coupon provides a tangible incentive for dormant shoppers whose average at‑risk spend is 1200 rupees, helping them return quickly."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle Two Bestsellers for the Price of One",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-A02"
+      ],
+      "rationale": "Offering a bundle of our best sellers at no extra cost encourages dormant customers to re‑engage, leveraging the 1200‑rupee risk band without exceeding discount limits."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn Double Loyalty Points on Your Next Order",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Rewarding dormant customers with double loyalty points increases perceived value, turning the 1200‑rupee risk into a win‑back opportunity."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "You’ve Been Missed – Here’s a Small Nudge",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A zero‑cost reminder nudge reminds dormant shoppers of our brand, maintaining contact without exceeding discount limits."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "20% Off to Win You Back",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-A02",
+        "SKU-A03",
+        "SKU-C01",
+        "SKU-F02"
+      ],
+      "rationale": "Maximizing the allowed discount cap provides a strong incentive for dormant customers within the 1200‑rupee risk band."
+    }
+  ]
+}

@@ -86,13 +86,15 @@ def test_successful_execution_flips_pending_to_executed_and_writes_one_row(seede
 
 def test_redelivered_idempotency_key_is_a_database_no_op(seeded_conn):
     """Calling execute_decision twice with the SAME decision_id (simulating a
-    retried request) must write exactly one executions row -- Razorpay's own
-    idempotency handling is keyed on this exact header, and the local check
-    (UNIQUE idempotency_key) is what makes a redelivery a no-op rather than a
-    second charge even before that header is honored upstream. Built directly
-    against a hand-inserted decision row (not through decide_one_opportunity,
-    which now executes internally) so exactly two execute_decision() calls
-    happen -- the ones this test is actually measuring."""
+    retried request) must write exactly one executions row. This is enforced
+    entirely at the application layer -- the local UNIQUE(idempotency_key)
+    check in execute_decision, which runs BEFORE the adapter is ever called --
+    not by Razorpay: verified live that its Payment Links API does not
+    deduplicate on a client-supplied key at all (see razorpay.py's module
+    docstring). Built directly against a hand-inserted decision row (not
+    through decide_one_opportunity, which now executes internally) so exactly
+    two execute_decision() calls happen -- the ones this test is actually
+    measuring."""
     _seed_opportunity(seeded_conn, "opp_idem", "cus_idem")
     seeded_conn.execute(
         "INSERT INTO decisions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -213,6 +215,16 @@ def test_reconcile_ignores_pending_decisions_still_within_the_timeout(seeded_con
 
 
 # ============================================================ LiveAdapter --
+#
+# Every fake below deliberately does NOT accept an `idempotency_key` keyword
+# -- neither does the real razorpay SDK call LiveAdapter actually makes. A
+# fake shaped `def fake(payload, idempotency_key=None)` would silently accept
+# the exact kwarg that crashed every real execution attempt with a bare
+# TypeError from inside `requests.Session.post()`, three levels below
+# anything these fakes would catch -- which is exactly how that bug survived
+# unit testing until a real credential was used. See razorpay.py's module
+# docstring for the full story and RAZORPAY_KEY_ID/SECRET-gated test below
+# for the live-API confirmation.
 
 
 def test_live_adapter_retries_transient_failure_with_backoff(monkeypatch):
@@ -220,7 +232,10 @@ def test_live_adapter_retries_transient_failure_with_backoff(monkeypatch):
 
     calls = {"n": 0}
 
-    def flaky_create(payload, idempotency_key=None):
+    def flaky_create(payload):
+        # No idempotency_key parameter -- the real SDK call takes none either
+        # (see razorpay.py's module docstring); a fake that accepted it here
+        # would silently mask the exact bug this signature guards against.
         calls["n"] += 1
         if calls["n"] < 3:
             raise RuntimeError("transient 5xx")
@@ -240,7 +255,7 @@ def test_live_adapter_retries_transient_failure_with_backoff(monkeypatch):
 def test_live_adapter_raises_after_exhausting_all_retries(monkeypatch):
     adapter = LiveAdapter("rzp_test_fake", "fake_secret")
 
-    def always_fails(payload, idempotency_key=None):
+    def always_fails(payload):
         raise RuntimeError("persistent outage")
 
     monkeypatch.setattr(adapter._client.payment_link, "create", always_fails)
@@ -256,7 +271,7 @@ def test_offer_spec_amount_reaches_live_adapter_in_paise(monkeypatch):
     adapter = LiveAdapter("rzp_test_fake", "fake_secret")
     captured = {}
 
-    def capture_create(payload, idempotency_key=None):
+    def capture_create(payload):
         captured.update(payload)
         return {"id": "plink_x"}
 
@@ -271,3 +286,35 @@ def test_offer_spec_amount_reaches_live_adapter_in_paise(monkeypatch):
     adapter.create_offer(spec, "idem1")
 
     assert captured["amount"] == 12345  # rupees -> paise, not the old hardcoded 0
+
+
+# ======================================================== live API, gated --
+
+import os  # noqa: E402
+
+_HAS_RAZORPAY_CREDS = bool(os.environ.get("RAZORPAY_KEY_ID")) and bool(
+    os.environ.get("RAZORPAY_KEY_SECRET")
+)
+
+
+@pytest.mark.skipif(not _HAS_RAZORPAY_CREDS, reason="RAZORPAY_KEY_ID/SECRET not set")
+def test_live_adapter_create_offer_against_real_razorpay_test_mode():
+    """The one test in this suite that touches the network. Runs only when
+    real test-mode credentials are present (they are gated behind an env
+    check, never a hardcoded skip) and creates one real, harmless test-mode
+    payment link -- this is the test that would have caught the
+    idempotency_key TypeError before it ever reached a judge's demo run."""
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    from revenew.models import ActionFamily
+
+    adapter = LiveAdapter(os.environ["RAZORPAY_KEY_ID"], os.environ["RAZORPAY_KEY_SECRET"])
+    spec = OfferSpec(
+        customer_id="cus_live_test", action_family=ActionFamily.PERCENT_DISCOUNT,
+        headline="Revenew live-verification test", amount=1.0,
+    )
+    result = adapter.create_offer(spec, "revenew-pytest-live-check")
+
+    assert result.status == "sent"
+    assert result.provider_ref.startswith("plink_")
