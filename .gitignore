@@ -216,4 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-bench/results/
+
+# Revenew: local SQLite state. Never committed -- these are exactly the two
+# files db/schema.sql and db/harness_schema.sql exist to regenerate, and
+# committing a real run's data would defeat the harness/runtime isolation the
+# whole design rests on (harness.db holds ground truth).
+revenew.db
+revenew.db-wal
+revenew.db-shm
+harness.db
+harness.db-wal
+harness.db-shm
+*.db-journal

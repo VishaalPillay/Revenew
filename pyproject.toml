@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "revenew"
+version = "0.1.0"
+description = "A decision layer above Razorpay that finds where a merchant's revenue is leaking, takes one bounded commercial action, and proves whether it worked."
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "jinja2>=3.1",
+    "apscheduler>=3.10",
+    "scipy>=1.14",
+    "numpy>=2.0",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+razorpay = ["razorpay>=1.4", "httpx>=0.28"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.setuptools]
+packages = ["revenew", "revenew.detect", "revenew.route", "revenew.decide",
+            "revenew.execute", "revenew.ledger", "revenew.measure", "revenew.api"]
+
+[tool.setuptools.package-data]
+revenew = ["*.sql", "detect/*.sql", "api/templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Depends(...) in an argument default is FastAPI's dependency-injection
+# pattern, not the mutable-default-argument bug B008 exists to catch -- every
+# route in this file uses it and will keep using it.
+"revenew/api/*.py" = ["B008"]
