@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Revenew</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root { color-scheme: light; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 32px;
+         background: #f7f7f5; color: #1a1a1a; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e5e5e2; border-radius: 8px; padding: 18px 20px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #888;
+             margin: 0 0 10px; font-weight: 600; }
+  .stat { font-size: 26px; font-weight: 600; }
+  .stat.positive { color: #1a7f37; }
+  .stat.negative { color: #c22; }
+  .stat.neutral { color: #444; }
+  .ci { color: #888; font-size: 13px; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+  th { color: #888; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  .sig { color: #1a7f37; font-weight: 600; }
+  .not-sig { color: #999; }
+  canvas { max-height: 260px; }
+  .anti-metric { font-size: 12px; color: #a66; border-top: 1px dashed #ddd; margin-top: 12px; padding-top: 10px; }
+  .empty { color: #999; font-style: italic; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>Revenew</h1>
+<div class="sub">
+  {% if run_id %}Regret and recovery from run <code>{{ run_id }}</code>{% else %}No replay run exported yet -- run <code>python -m harness.run_replay</code>{% endif %}
+</div>
+
+<div class="grid">
+
+  <div class="card">
+    <h2>Incremental lift, pooled</h2>
+    <div class="stat {{ 'positive' if overall.lift > 0 else 'negative' if overall.lift < 0 else 'neutral' }}">
+      {{ "%.0f"|format(overall.lift) }} / decision
+    </div>
+    <div class="ci">
+      95% CI [{{ "%.0f"|format(overall.ci_low) }}, {{ "%.0f"|format(overall.ci_high) }}]
+      &middot; n_treatment={{ overall.n_treatment }} n_control={{ overall.n_control }}
+      &middot; {{ "significant" if overall.is_significant else "not yet significant" }}
+    </div>
+    <div class="anti-metric">
+      treatment mean {{ "%.0f"|format(overall.mean_treatment) }} vs control mean {{ "%.0f"|format(overall.mean_control) }}
+      &mdash; gross treatment revenue is not reported on its own; most targeted customers would have converted anyway.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Candidate validity</h2>
+    {% if candidate_validity.validity_rate is not none %}
+    <div class="stat neutral">{{ "%.0f"|format(candidate_validity.validity_rate * 100) }}%</div>
+    <div class="ci">{{ candidate_validity.total_valid }} / {{ candidate_validity.total_generated }} candidates stayed inside the envelope unassisted</div>
+    {% else %}
+    <div class="empty">No decisions yet.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Budget consumed</h2>
+    <div class="stat neutral">{{ "%.0f"|format(budget.consumed) }}</div>
+    <div class="ci">Reserved rupees not yet released. See v_budget_consumed.</div>
+  </div>
+
+</div>
+
+<div class="grid">
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>Cumulative regret vs. oracle</h2>
+    {% if regret_curve %}
+    <canvas id="regretChart"></canvas>
+    {% else %}
+    <div class="empty">No exported regret curve. A learning bandit's curve should visibly flatten as posteriors sharpen.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+<div class="grid">
+
+  <div class="card">
+    <h2>Lift by segment</h2>
+    <table>
+      <tr><th>Segment</th><th>Lift</th><th>95% CI</th><th>n_t</th><th>n_c</th></tr>
+      {% for l in lifts %}
+      <tr>
+        <td>{{ l.segment.value }}</td>
+        <td class="{{ 'sig' if l.is_significant else 'not-sig' }}">{{ "%.0f"|format(l.lift) }}</td>
+        <td>[{{ "%.0f"|format(l.ci_low) }}, {{ "%.0f"|format(l.ci_high) }}]</td>
+        <td>{{ l.n_treatment }}</td>
+        <td>{{ l.n_control }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>No-action reasons</h2>
+    {% if no_action_reasons %}
+    <table>
+      <tr><th>Reason</th><th>Count</th></tr>
+      {% for r in no_action_reasons %}
+      <tr><td>{{ r.no_action_reason }}</td><td>{{ r.n }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No no_action decisions recorded.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Posterior recovery</h2>
+    {% if posterior_recovery %}
+    <table>
+      <tr><th>Segment</th><th>Family</th><th>n</th><th>p&#770;</th><th>p*</th><th>err</th></tr>
+      {% for r in posterior_recovery %}
+      <tr>
+        <td>{{ r.segment }}</td>
+        <td>{{ r.action_family }}</td>
+        <td>{{ "%.0f"|format(r.n_observed) }}</td>
+        <td>{{ "%.3f"|format(r.p_hat) }}</td>
+        <td>{{ "%.3f"|format(r.p_true) }}</td>
+        <td>{{ "%.3f"|format(r.p_error) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No exported recovery data.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% if regret_curve %}
+<script>
+  const points = {{ regret_curve | tojson }};
+  new Chart(document.getElementById('regretChart'), {
+    type: 'line',
+    data: {
+      labels: points.map(p => p.decision_index),
+      datasets: [{
+        label: 'Cumulative regret',
+        data: points.map(p => p.cumulative_regret),
+        borderColor: '#c22',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.1,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'decision #' } },
+        y: { title: { display: true, text: 'cumulative regret (Rs)' } },
+      },
+    },
+  });
+</script>
+{% endif %}
+
+</body>
+</html>
