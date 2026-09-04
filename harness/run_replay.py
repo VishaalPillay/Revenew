@@ -28,6 +28,7 @@ from revenew.db import connect as rconnect
 from revenew.db import init_db
 from revenew.decide import decide_one_opportunity
 from revenew.decide.bandit import PosteriorStore
+from revenew.decide.cassette import DEFAULT_CASSETTE_DIR, Cassette
 from revenew.decide.generator import CandidateGenerator
 from revenew.detect.detector import OpportunityDetector
 from revenew.ledger.outcome import record_outcome
@@ -86,6 +87,9 @@ def run_replay(
     revenew_db_path: str = "revenew.db",
     harness_db_path: str = "harness.db",
     quiet: bool = True,
+    llm_mode: str = "off",
+    cassette_dir: str | None = None,
+    strict_replay: bool = False,
 ) -> ReplayResult:
     t0 = time.perf_counter()
     if policy is None:
@@ -122,7 +126,8 @@ def run_replay(
     store.ensure_initialized()
 
     detector = OpportunityDetector()
-    generator = CandidateGenerator()  # fallback path if no ANTHROPIC_API_KEY is set
+    cassette = Cassette(cassette_dir) if cassette_dir else Cassette(DEFAULT_CASSETTE_DIR)
+    generator = CandidateGenerator(mode=llm_mode, cassette=cassette, strict_replay=strict_replay)
     oracle = OutcomeOracle(seed=seed + 1)
     resolution_rng = np.random.default_rng(seed + 2)
 
@@ -239,11 +244,28 @@ if __name__ == "__main__":
     p.add_argument("--revenew-db", default="revenew.db")
     p.add_argument("--harness-db", default="harness.db")
     p.add_argument("--no-export", action="store_true", help="skip writing the regret curve into revenew.db")
+    p.add_argument(
+        "--llm", choices=["off", "record", "replay"], default="off",
+        help="off (default): templated fallback only, matches every prior run. "
+             "record: fill cassette misses with real API calls, keyed by cohort "
+             "(opportunity_type, segment, rupees band, envelope fingerprint) -- "
+             "~dozens of calls, not one per decision. replay: cassette only, "
+             "never touches the API -- what a judge with no credential runs.",
+    )
+    p.add_argument(
+        "--cassette-dir", default=None,
+        help="defaults to cassettes/candidates/ at the repo root (see decide/cassette.py)",
+    )
+    p.add_argument(
+        "--strict-replay", action="store_true",
+        help="with --llm replay, raise on a cassette miss instead of falling back to a template",
+    )
     args = p.parse_args()
 
     r = run_replay(
         seed=args.seed, n_customers=args.customers, n_days=args.days,
         revenew_db_path=args.revenew_db, harness_db_path=args.harness_db, quiet=False,
+        llm_mode=args.llm, cassette_dir=args.cassette_dir, strict_replay=args.strict_replay,
     )
     print()
     print(f"run_id: {r.run_id}")

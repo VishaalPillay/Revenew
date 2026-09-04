@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ============================================================== vocabulary --
 
@@ -156,7 +156,18 @@ class Candidate(BaseModel):
     Exactly one of discount_pct / discount_amount is set for a price-off
     family; both are None for REMINDER_NUDGE, which is the model-level
     expression of "this family has no monetary cost".
+
+    `extra="forbid"` is not just belt-and-braces validation -- it is what
+    makes `model_json_schema()` emit `additionalProperties: false`, which the
+    Anthropic API's `strict: true` tool mode requires (decide/generator.py).
+    Under strict mode a response that doesn't match this shape cannot come
+    back as a superficially-valid tool call with junk fields at all; the
+    malformed-output retry path exists for the cases strict mode can't catch
+    (e.g. a family/discount-shape combination the tool schema allows but
+    `_one_discount_shape` below rejects).
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     action_family: ActionFamily
     headline: str = Field(max_length=140)
@@ -192,6 +203,8 @@ class Candidate(BaseModel):
 class CandidateSet(BaseModel):
     """Structured output contract for the LLM call. Exactly this shape, or the
     call is treated as malformed (see NoActionReason.LLM_UNAVAILABLE)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     candidates: list[Candidate] = Field(min_length=1, max_length=8)
 

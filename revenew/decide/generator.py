@@ -14,14 +14,30 @@ SYSTEM_DESIGN.md section 7 specifies two distinct responses:
       on a call that has already shown it cannot satisfy the contract twice.
 
 `generate()` returns `CandidateSet | None`: a set means "act on this, whether
-it came from the model or the template shelf"; `None` means the second
-failure path, and the caller records no_action.
+it came from the model, the cassette, or the template shelf"; `None` means
+the second failure path, and the caller records no_action.
 
-Structured output is enforced with a forced tool call, not "please return
-JSON" in the prompt -- Candidate's Pydantic schema IS the tool's input schema,
-so a response that doesn't match cannot come back as valid JSON in the first
-place; it comes back as a tool_use block with a wrong shape, and Pydantic
-validation on `.input` is what decides "malformed" here.
+Structured output is enforced with a forced, `strict: true` tool call, not
+"please return JSON" in the prompt -- `Candidate`'s Pydantic schema (with
+`extra="forbid"`, see models.py) IS the tool's input schema, so a response
+that doesn't match the shape cannot come back as a superficially-valid tool
+call with junk fields; Pydantic validation on `.input` catches the rest
+(family/discount-shape combinations the tool schema allows but
+`_one_discount_shape` rejects).
+
+**Modes** (see decide/cassette.py for the full rationale): `mode="off"`
+(the default) never touches the cassette or the API -- today's template
+fallback, unconditionally, so nothing changes for a caller that doesn't ask
+for the LLM. `mode="record"` calls the API on a cassette miss and persists
+the result, keyed by COHORT (opportunity_type, segment, a coarse
+rupees_at_risk band, and an envelope fingerprint) rather than by decision --
+that collapses tens of thousands of decisions down to a few dozen real API
+calls. `mode="replay"` never calls the API at all: a cassette hit returns the
+recorded candidates byte-identically (the reproducibility claim in
+SYSTEM_DESIGN.md section 1.2 survives an LLM in the loop only because of
+this), and a miss falls back to the template shelf unless `strict_replay=True`,
+which raises instead -- for CI, where a silent fallback would hide a stale or
+incomplete cassette.
 """
 
 from __future__ import annotations
@@ -30,6 +46,7 @@ import json
 import os
 
 from revenew.decide.bandit import PosteriorStore
+from revenew.decide.cassette import Cassette, cache_key, rupees_band
 from revenew.models import (
     ActionFamily,
     Candidate,
@@ -41,15 +58,15 @@ from revenew.models import (
 from revenew.settings import CLAUDE_MODEL, PolicyConfig
 
 MODEL = CLAUDE_MODEL
-MAX_TOKENS = 1024
+MAX_TOKENS = 4096  # 5-8 candidates with headlines + rationales truncate at 1024
 
 CANDIDATE_SET_SCHEMA = CandidateSet.model_json_schema()
 
 SYSTEM_PROMPT = """You are composing commercial offers for an e-commerce merchant.
 
-You will be given: an opportunity (why this customer is worth acting on), a
-constraint envelope (hard caps you must not exceed), and the customer's
-segment. Propose 5 to 8 CANDIDATE offers. Each must:
+You will be given: an opportunity (why this cohort of customers is worth
+acting on), a constraint envelope (hard caps you must not exceed), and the
+customer segment. Propose 5 to 8 CANDIDATE offers. Each must:
 
 - pick exactly one action_family from the allowed list
 - stay within max_discount_pct and max_absolute_discount from the envelope
@@ -60,31 +77,48 @@ segment. Propose 5 to 8 CANDIDATE offers. Each must:
 Vary the candidates: different families, different depths, at least one
 REMINDER_NUDGE (zero cost) among them. You are proposing options for a
 downstream ranking system to choose between, not picking the single best one
-yourself.
+yourself. These candidates will be reused across every customer in this
+cohort, not just one -- do not reference any one customer's specific name or
+order history, only the cohort-level facts given to you.
 """
+
+
+class CassetteMissError(RuntimeError):
+    """Raised in replay mode with strict_replay=True when a cohort has no
+    recorded candidates. A silent fallback here would hide a stale or
+    incomplete cassette instead of failing loudly -- see cassette.py."""
 
 
 def _prompt_context(
     opportunity_type: OpportunityType,
     segment: Segment,
-    rupees_at_risk: float,
+    rupees_band_label: str,
+    rupees_band_value: float,
     envelope: Envelope,
 ) -> str:
+    """Built from the COHORT, not one customer -- deliberately no exact
+    rupees_at_risk and no budget_remaining. Both change on every decision;
+    baking either in would make two customers in the same cohort produce
+    different prompts (and therefore different cache keys in all but name),
+    which defeats cohort-level generation. See cassette.py's
+    envelope_fingerprint for the same exclusion, applied to the cache key.
+    """
     return json.dumps(
         {
             "opportunity_type": opportunity_type.value,
             "segment": segment.value,
-            "rupees_at_risk": rupees_at_risk,
+            "rupees_at_risk_band": rupees_band_label,
+            "rupees_at_risk_representative": rupees_band_value,
             "envelope": {
                 "max_discount_pct": envelope.max_discount_pct,
                 "max_absolute_discount": envelope.max_absolute_discount,
-                "budget_remaining": envelope.budget_remaining,
                 "excluded_skus": envelope.excluded_skus,
                 "cogs_known_for_skus": sorted(envelope.cogs_by_sku or {}),
             },
             "allowed_action_families": [f.value for f in ActionFamily],
         },
         indent=2,
+        sort_keys=True,
     )
 
 
@@ -101,8 +135,24 @@ def _client():
 
 
 class CandidateGenerator:
-    def __init__(self, client=None) -> None:
-        self.client = client if client is not None else _client()
+    def __init__(
+        self,
+        client=None,
+        *,
+        mode: str = "off",
+        cassette: Cassette | None = None,
+        strict_replay: bool = False,
+    ) -> None:
+        if mode not in ("off", "record", "replay"):
+            raise ValueError(f"mode must be 'off', 'record', or 'replay', got {mode!r}")
+        self.mode = mode
+        self.cassette = cassette if cassette is not None else (Cassette() if mode != "off" else None)
+        self.strict_replay = strict_replay
+        # In "off" mode this stays None even if a credential is present --
+        # the default must never make a live call just because ANTHROPIC_API_KEY
+        # happens to be set in the environment. Only "record"/"replay" resolve
+        # a client (and even "replay" never actually calls it -- see generate()).
+        self.client = None if mode == "off" else (client if client is not None else _client())
 
     @property
     def llm_available(self) -> bool:
@@ -118,28 +168,67 @@ class CandidateGenerator:
         store: PosteriorStore,
         policy: PolicyConfig,
     ) -> CandidateSet | None:
-        if self.client is None:
+        if self.mode == "off":
             return _template_fallback(segment, envelope, policy, store)
 
-        context = _prompt_context(opportunity_type, segment, rupees_at_risk, envelope)
+        key = cache_key(opportunity_type, segment, rupees_at_risk, envelope)
+
+        if self.mode == "replay":
+            cached = self.cassette.get(key)
+            if cached is not None:
+                return cached
+            if self.strict_replay:
+                raise CassetteMissError(
+                    f"no recorded candidates for cohort {key} "
+                    f"({opportunity_type.value}/{segment.value}) -- run in "
+                    "mode='record' first, or drop strict_replay"
+                )
+            return _template_fallback(segment, envelope, policy, store)
+
+        # mode == "record"
+        cached = self.cassette.get(key)
+        if cached is not None:
+            return cached  # a hit never calls the API, even in record mode
+
+        if self.client is None:
+            # No credential to fill the miss with. Fall back, but do NOT
+            # persist a template candidate to the cassette as if it were a
+            # real recording -- a later run with a real credential must still
+            # see this as a miss and try again.
+            return _template_fallback(segment, envelope, policy, store)
+
+        import anthropic  # local: keeps `anthropic` optional for off/replay-only callers
+
+        band_label, band_value = rupees_band(rupees_at_risk)
+        context = _prompt_context(opportunity_type, segment, band_label, band_value, envelope)
         try:
             result = self._call(context, retry_hint=None)
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+            # A bad key must be loud in record mode -- this is precisely how
+            # "the LLM never actually ran" stayed invisible for so long: a
+            # bare `except Exception` here would silently downgrade to the
+            # template shelf and look, from the outside, exactly like success.
+            raise
         except Exception:
-            # Connectivity, auth, rate limit, timeout -- whatever the SDK
-            # raises, this is the "unreachable" branch: degrade, don't die.
+            # Connectivity, rate limit, timeout, 5xx -- degrade, don't die.
             return _template_fallback(segment, envelope, policy, store)
 
         parsed = _try_parse(result)
-        if parsed is not None:
-            return parsed
+        if parsed is None:
+            # One retry with the schema echoed back, per the failure table.
+            try:
+                result2 = self._call(context, retry_hint=_schema_hint())
+            except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+                raise
+            except Exception:
+                return _template_fallback(segment, envelope, policy, store)
+            parsed = _try_parse(result2)
 
-        # One retry with the schema echoed back, per the failure table.
-        try:
-            result2 = self._call(context, retry_hint=_schema_hint())
-        except Exception:
-            return _template_fallback(segment, envelope, policy, store)
+        if parsed is None:
+            return None  # genuinely malformed twice -> no_action, per the failure table
 
-        return _try_parse(result2)  # None here means genuinely give up -> no_action
+        self.cassette.put(key, parsed)
+        return parsed
 
     def _call(self, context: str, *, retry_hint: str | None) -> dict:
         user_content = context if retry_hint is None else f"{context}\n\n{retry_hint}"
@@ -152,6 +241,16 @@ class CandidateGenerator:
                     "name": "propose_candidates",
                     "description": "Propose 5-8 candidate offers for this opportunity.",
                     "input_schema": CANDIDATE_SET_SCHEMA,
+                    # Guarantees tool_use.input validates exactly against the
+                    # schema server-side -- CandidateSet/Candidate's
+                    # extra="forbid" (models.py) is what makes
+                    # additionalProperties:false true of the schema, which
+                    # this requires. Most of the "malformed JSON" failure
+                    # path becomes unreachable in practice; the retry-then-
+                    # None path stays for what strict mode can't catch (e.g.
+                    # a family/discount-shape combination the schema allows
+                    # but Candidate._one_discount_shape rejects).
+                    "strict": True,
                 }
             ],
             tool_choice={"type": "tool", "name": "propose_candidates"},
