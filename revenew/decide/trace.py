@@ -1,9 +1,16 @@
 """DecisionTrace: the sink every stage of one decision feeds into.
 
 Persists a completed `Decision` to `decisions` + `decision_candidates`. This
-is deliberately the ONLY place either table is written -- the audit trail is
-exactly as trustworthy as the guarantee that nothing bypasses it, so nothing
-else in this codebase INSERTs into `decisions` directly.
+is deliberately the ONLY place either table is INSERTed into -- the audit
+trail is exactly as trustworthy as the guarantee that nothing bypasses it, so
+nothing else in this codebase INSERTs into `decisions` directly.
+
+`mark_executed` is the one UPDATE this codebase issues against `decisions`,
+also kept here for the same reason: a decision is persisted as `pending`
+(decide/__init__.py) before execution is even attempted, and this is what
+flips it to `executed` once `execute_decision` actually succeeds. "What
+wrote or changed this row" has exactly one answer -- this module -- no
+matter which SQL verb is involved.
 """
 
 from __future__ import annotations
@@ -51,4 +58,11 @@ def persist_decision(conn: sqlite3.Connection, decision: Decision) -> None:
             for i, dc in enumerate(decision.candidates)
         ],
     )
+    conn.commit()
+
+
+def mark_executed(conn: sqlite3.Connection, decision_id: str) -> None:
+    """Flips a `pending` decision to `executed` after `execute_decision`
+    (revenew/execute/razorpay.py) succeeds. See the module docstring."""
+    conn.execute("UPDATE decisions SET status = 'executed' WHERE decision_id = ?", (decision_id,))
     conn.commit()

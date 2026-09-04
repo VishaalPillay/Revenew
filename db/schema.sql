@@ -235,6 +235,19 @@ CREATE VIEW v_budget_consumed AS
 SELECT COALESCE(SUM(-amount), 0) AS consumed
 FROM budget_ledger;
 
+-- Decisions still holding a budget reservation with no matching execution
+-- row -- either a genuine crash between reserve and execute, or an
+-- execution that succeeded but the process died before trace.mark_executed
+-- committed. What ledger/reconcile.py sweeps once these age past its
+-- timeout. See SYSTEM_DESIGN.md section 7: "Crash between reserve and
+-- commit -> action.status='pending' older than timeout -> reconciler
+-- releases the hold."
+CREATE VIEW v_pending_executions AS
+SELECT d.decision_id, d.created_at, d.segment, d.action_family
+FROM decisions d
+LEFT JOIN executions e ON e.decision_id = d.decision_id
+WHERE d.status = 'pending' AND e.execution_id IS NULL;
+
 -- ============================================== demo-only exported artifacts --
 --
 -- Written ONLY by harness/regret.py, after a replay run, and ONLY these two

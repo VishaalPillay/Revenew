@@ -2,11 +2,11 @@
 
 `decide_one_opportunity` is the orchestrator diagram 2 depicts: envelope in,
 LLM candidates out, validator drops the illegal ones, bandit picks a winner
-from what survives, budget is reserved, and the whole thing is traced. Both
-the live webhook path (revenew/api/webhooks.py) and the replay driver
-(harness/run_replay.py) call this SAME function -- there is one decision path
-in this codebase, not a live one and a separate replay one that happen to
-agree.
+from what survives, budget is reserved, the chosen offer is EXECUTED against
+Razorpay, and the whole thing is traced. Both the live webhook path
+(revenew/api/webhooks.py) and the replay driver (harness/run_replay.py) call
+this SAME function -- there is one decision path in this codebase, not a
+live one and a separate replay one that happen to agree.
 """
 
 from __future__ import annotations
@@ -18,12 +18,14 @@ from datetime import datetime
 from revenew.decide.bandit import BanditScorer, PosteriorStore
 from revenew.decide.envelope import EnvelopeEngine, EnvelopeValidator
 from revenew.decide.generator import CandidateGenerator
-from revenew.decide.trace import persist_decision
+from revenew.decide.trace import mark_executed, persist_decision
 from revenew.execute import budget
+from revenew.execute.razorpay import FixtureAdapter, RazorpayAdapter, execute_decision
 from revenew.models import (
     Decision,
     DecisionStatus,
     NoActionReason,
+    OfferSpec,
     OpportunityType,
     Segment,
 )
@@ -51,6 +53,7 @@ def decide_one_opportunity(
     generator: CandidateGenerator,
     bandit_seed: int,
     now: datetime,
+    adapter: RazorpayAdapter | None = None,
 ) -> Decision:
     """Runs the full decision path for one TREATMENT-arm opportunity.
 
@@ -67,6 +70,10 @@ def decide_one_opportunity(
     that skip it exactly once (a fresh `posteriors` table) will simply see
     `PosteriorStore.get()` fall back to the in-memory prior rather than error
     -- but every real entry point in this codebase initializes it upfront.
+
+    `adapter` defaults to `FixtureAdapter()` -- no network call, a synthetic
+    id -- so every existing caller (every test, every replay run) keeps
+    behaving exactly as before unless it explicitly opts into `LiveAdapter`.
     """
     store = PosteriorStore(conn)
     envelope = EnvelopeEngine.build(conn, policy)
@@ -111,11 +118,17 @@ def decide_one_opportunity(
         # envelope snapshot taken before order_value was known.
         return no_action(NoActionReason.BUDGET_EXHAUSTED, candidates=verdicts)
 
+    # Persisted as PENDING, not EXECUTED, before execution is even attempted
+    # -- this is F8 (execution) closing the loop with the failure-mode table
+    # in SYSTEM_DESIGN.md section 7: "Crash between reserve and commit ->
+    # action.status='pending' older than timeout -> reconciler releases the
+    # hold." A decision that never gets this far genuinely never spent
+    # anything; one that does is exactly as auditable mid-flight as at rest.
     decision = Decision(
         decision_id=decision_id, opportunity_id=opportunity_id, run_id=run_id,
         segment=segment, action_family=choice.candidate.action_family, envelope=envelope,
         candidates=verdicts, chosen_candidate=choice.candidate, propensity=choice.propensity,
-        status=DecisionStatus.EXECUTED, no_action_reason=None, created_at=now,
+        status=DecisionStatus.PENDING, no_action_reason=None, created_at=now,
     )
     # The decision row must exist before budget_ledger can reference it (a
     # foreign key, not an implementation detail), so persist THEN reserve --
@@ -123,4 +136,26 @@ def decide_one_opportunity(
     # holding budget against a decision nothing else can find.
     persist_decision(conn, decision)
     budget.reserve(conn, decision_id, cost, now=now)
-    return decision
+
+    if adapter is None:
+        adapter = FixtureAdapter()
+    spec = OfferSpec(
+        customer_id=customer_id, action_family=choice.candidate.action_family,
+        headline=choice.candidate.headline, amount=cost,
+        discount_pct=choice.candidate.discount_pct, discount_amount=choice.candidate.discount_amount,
+        skus=choice.candidate.skus,
+    )
+    result = execute_decision(conn, adapter, decision_id=decision_id, spec=spec, now=now)
+
+    if result.status == "failed":
+        # Known-failed, synchronously -- release the hold right away rather
+        # than waiting for the reconciler's timeout sweep. The decision row
+        # stays 'pending': the schema has no 'failed' decision status (only
+        # executions.status does), and a definitively-failed attempt is
+        # indistinguishable from a stalled one for every downstream reader
+        # that matters -- neither one spent the reservation.
+        budget.release(conn, decision_id, cost, now=now)
+        return decision
+
+    mark_executed(conn, decision_id)
+    return decision.model_copy(update={"status": DecisionStatus.EXECUTED})
