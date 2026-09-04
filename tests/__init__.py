@@ -1,1 +1,0 @@
-"""Paydger test suite."""
