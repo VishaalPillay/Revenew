@@ -91,8 +91,10 @@ class LiveAdapter:
         # No native "offer" object in Razorpay's API: realized as a Payment
         # Link for the discounted amount, with the offer's headline carried in
         # the description so it is visible to the customer and in the
-        # merchant's dashboard.
-        amount_paise = 0  # a real amount requires the customer's basket, resolved by the caller
+        # merchant's dashboard. spec.amount is resolved by the caller
+        # (decide/__init__.py, from the customer's real order_value) -- this
+        # adapter has no basket to look one up from itself.
+        amount_paise = int(round(spec.amount * 100))  # Razorpay amounts are paise
         payload = {
             "amount": amount_paise,
             "currency": "INR",

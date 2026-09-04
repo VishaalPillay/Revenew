@@ -280,11 +280,20 @@ class Outcome(BaseModel):
 
 
 class OfferSpec(BaseModel):
-    """What RazorpayAdapter.create_offer needs. Derived from a chosen Candidate."""
+    """What RazorpayAdapter.create_offer needs. Derived from a chosen Candidate.
+
+    `amount` is the real rupee figure the offer is worth -- `Candidate.
+    estimated_cost(order_value)`, resolved at the call site in
+    decide/__init__.py where the customer's actual order_value is already
+    known. Earlier, LiveAdapter.create_offer hardcoded this to 0 with no
+    caller ever supplying a real figure; carrying it on the spec itself is
+    what makes that fixable without LiveAdapter having to look anything up.
+    """
 
     customer_id: str
     action_family: ActionFamily
     headline: str
+    amount: float = Field(ge=0, default=0.0)
     discount_pct: float | None = None
     discount_amount: float | None = None
     skus: list[str] = Field(default_factory=list)
