@@ -77,7 +77,7 @@ Ground truth reaches the regret calculation without ever touching the runtime. E
 | API | FastAPI + uvicorn | Webhook receiver, read API, and demo page from a single server |
 | Schemas | Pydantic v2 | One contract for the API and for LLM structured output |
 | Scheduling | APScheduler, in-process | One recurring job; a broker would be pure overhead |
-| LLM | Claude, one call per decision | Candidate composition only |
+| LLM | Groq (`openai/gpt-oss-20b`), one call per cohort | Candidate composition only. Originally Claude; switched when no Anthropic billing was available -- see `SYSTEM_DESIGN.md` |
 | Sampling | Seeded `numpy.random.Generator` | A seeded RNG is what makes replay exact |
 | Statistics | SciPy | Welch intervals on the reported lift |
 | Dashboard | Jinja2 + Chart.js | No separate frontend build |

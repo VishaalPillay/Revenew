@@ -3,16 +3,18 @@ section 7 marks "unit"-tested (malformed JSON -> one retry, all candidates
 invalid, LLM unreachable -> fallback, and the connectivity/auth split that
 makes a bad key loud instead of a silent downgrade), plus the cassette modes
 that make cohort-level generation reproducible. None of this needs a real
-credential -- every case here injects a fake client.
+credential -- every case here injects a fake client shaped like Groq's
+OpenAI-compatible chat.completions response.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-import anthropic
-import httpx2
+import groq
+import httpx
 import pytest
 
 from revenew.decide.bandit import PosteriorStore
@@ -29,14 +31,9 @@ ENVELOPE = Envelope(
 )
 
 
-def _tool_response(payload: dict | None) -> SimpleNamespace:
-    """A response shaped like the SDK's Message, carrying one tool_use block
-    (or none, to simulate a response with no tool call at all)."""
-    if payload is None:
-        return SimpleNamespace(content=[SimpleNamespace(type="text", text="I decline.")])
-    return SimpleNamespace(
-        content=[SimpleNamespace(type="tool_use", name="propose_candidates", input=payload)]
-    )
+def _response(content: str) -> SimpleNamespace:
+    """A response shaped like Groq's chat.completions.create() return value."""
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
 def _valid_payload(n: int = 2) -> dict:
@@ -61,7 +58,7 @@ class FakeClient:
     def __init__(self, *reactions) -> None:
         self._reactions = list(reactions)
         self.calls: list[dict] = []
-        self.messages = SimpleNamespace(create=self._create)
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
     def _create(self, **kwargs):
         self.calls.append(kwargs)
@@ -71,10 +68,10 @@ class FakeClient:
         return reaction
 
 
-def _auth_error() -> anthropic.AuthenticationError:
-    req = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
-    resp = httpx2.Response(401, request=req)
-    return anthropic.AuthenticationError("invalid x-api-key", response=resp, body=None)
+def _auth_error() -> groq.AuthenticationError:
+    req = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    resp = httpx.Response(401, request=req)
+    return groq.AuthenticationError("invalid api key", response=resp, body=None)
 
 
 @pytest.fixture
@@ -106,7 +103,7 @@ def test_off_mode_never_touches_an_injected_client(store):
 
 
 def test_record_mode_calls_once_parses_and_persists_to_cassette(store, tmp_path):
-    client = FakeClient(_tool_response(_valid_payload()))
+    client = FakeClient(_response(json.dumps(_valid_payload())))
     cassette = Cassette(tmp_path)
     gen = CandidateGenerator(client, mode="record", cassette=cassette)
 
@@ -135,8 +132,8 @@ def test_record_mode_cache_hit_never_calls_the_client(store, tmp_path):
 
 
 def test_record_mode_retries_once_on_malformed_then_succeeds(store, tmp_path):
-    malformed = _tool_response({"candidates": "not a list"})
-    valid = _tool_response(_valid_payload())
+    malformed = _response("not json at all")
+    valid = _response(json.dumps(_valid_payload()))
     client = FakeClient(malformed, valid)
     gen = CandidateGenerator(client, mode="record", cassette=Cassette(tmp_path))
 
@@ -145,11 +142,28 @@ def test_record_mode_retries_once_on_malformed_then_succeeds(store, tmp_path):
     assert result is not None
     assert len(client.calls) == 2
     # the retry call must echo the schema, per the failure-mode table
-    assert "schema" in client.calls[1]["messages"][0]["content"].lower()
+    assert "schema" in client.calls[1]["messages"][1]["content"].lower()
+
+
+def test_record_mode_empty_content_retries_rather_than_degrading(store, tmp_path):
+    """Regression: `_call()` must treat 'no content' and 'content that isn't
+    valid JSON' as MALFORMED OUTPUT (retry, then give up), not as a
+    connectivity failure (immediate degrade) -- the two are easy to conflate
+    if `_call()` raises on either, which would skip the retry path entirely
+    on the very first attempt."""
+    empty = _response("")
+    valid = _response(json.dumps(_valid_payload()))
+    client = FakeClient(empty, valid)
+    gen = CandidateGenerator(client, mode="record", cassette=Cassette(tmp_path))
+
+    result = _generate(gen, store)
+
+    assert result is not None
+    assert len(client.calls) == 2
 
 
 def test_record_mode_malformed_twice_returns_none(store, tmp_path):
-    malformed = _tool_response({"candidates": []})  # violates min_length=1
+    malformed = _response(json.dumps({"candidates": []}))  # violates min_length=1
     client = FakeClient(malformed, malformed)
     gen = CandidateGenerator(client, mode="record", cassette=Cassette(tmp_path))
 
@@ -177,12 +191,12 @@ def test_record_mode_auth_error_is_raised_not_swallowed(store, tmp_path):
     client = FakeClient(_auth_error())
     gen = CandidateGenerator(client, mode="record", cassette=Cassette(tmp_path))
 
-    with pytest.raises(anthropic.AuthenticationError):
+    with pytest.raises(groq.AuthenticationError):
         _generate(gen, store)
 
 
 def test_record_mode_no_credential_degrades_without_caching_the_miss(store, tmp_path, monkeypatch):
-    # This dev environment has a real ANTHROPIC_API_KEY in .env (Phase 0), so
+    # This dev environment may have a real GROQ_API_KEY in .env, so
     # simulating "no credential resolvable" means patching `_client()`
     # itself, not just passing client=None -- passing None with a real key
     # present would resolve a live client, which is not what this test means
@@ -248,7 +262,7 @@ def test_generator_output_that_violates_the_envelope_never_reaches_execution(see
              "discount_pct": 0.99, "discount_amount": None, "skus": [], "rationale": "illegal"},
         ]
     }
-    client = FakeClient(_tool_response(illegal_payload))
+    client = FakeClient(_response(json.dumps(illegal_payload)))
     gen = CandidateGenerator(client, mode="record", cassette=Cassette(tmp_path))
 
     seeded_conn.execute("INSERT OR IGNORE INTO customers VALUES ('cus_gen_test', ?)", ("2026-01-01",))

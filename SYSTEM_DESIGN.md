@@ -106,7 +106,7 @@ are separate SQLite files. The isolation is a file boundary, not a convention.
 | HTTP | FastAPI + uvicorn | Webhook receiver, read API, and the demo page from one process |
 | Schemas | Pydantic v2 | Doubles as the LLM structured-output contract and the API contract |
 | Scheduler | APScheduler, in-process | Cron for the slow clock. Celery would add a broker for one recurring job. |
-| LLM | Claude (Sonnet tier), single call per decision | Only used where output is genuinely open-ended |
+| LLM | **Groq** (`openai/gpt-oss-20b`, structured-output strict mode), single call per cohort | Originally specified as Claude (Sonnet tier); switched when no Anthropic billing was available in the build environment. Groq's `response_format` strict `json_schema` mode gives the same schema-guarantee property the design originally got from Anthropic's forced `strict` tool call. See ENGINEERING_LOG.md and `revenew/decide/generator.py`. |
 | Sampling | `numpy.random.Generator` seeded per run | Seeded RNG is what makes replay exact |
 | Statistics | `scipy.stats` | Welch's t-interval for the reported lift |
 | Dashboard | Jinja2 page + Chart.js from CDN | One server, no separate frontend build |

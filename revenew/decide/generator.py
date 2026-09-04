@@ -17,27 +17,25 @@ SYSTEM_DESIGN.md section 7 specifies two distinct responses:
 it came from the model, the cassette, or the template shelf"; `None` means
 the second failure path, and the caller records no_action.
 
-Structured output is enforced with a forced, `strict: true` tool call, not
-"please return JSON" in the prompt -- `Candidate`'s Pydantic schema (with
-`extra="forbid"`, see models.py) IS the tool's input schema, so a response
-that doesn't match the shape cannot come back as a superficially-valid tool
-call with junk fields; Pydantic validation on `.input` catches the rest
-(family/discount-shape combinations the tool schema allows but
-`_one_discount_shape` rejects).
+**Provider: Groq, not Anthropic.** SYSTEM_DESIGN.md section 3.1 names "Claude
+(Sonnet tier)" -- this is a disclosed, constraint-driven deviation (no
+Anthropic billing available in this environment; see ENGINEERING_LOG.md and
+revenew/settings.py). Structured output is enforced via Groq's
+`response_format={"type": "json_schema", ..., "strict": True}`, which -- as
+of this writing -- only a handful of Groq-hosted models honor
+(openai/gpt-oss-20b/120b, qwen/qwen3-32b); GROQ_MODEL defaults to the
+20b variant. `strict: true` plus `Candidate`/`CandidateSet`'s
+`extra="forbid"` (models.py) is what makes a response that doesn't match the
+schema structurally impossible rather than merely likely -- the
+malformed-output retry path stays for what constrained decoding can't catch
+(a family/discount-shape combination the JSON schema allows but
+`Candidate._one_discount_shape` rejects).
 
-**Modes** (see decide/cassette.py for the full rationale): `mode="off"`
-(the default) never touches the cassette or the API -- today's template
-fallback, unconditionally, so nothing changes for a caller that doesn't ask
-for the LLM. `mode="record"` calls the API on a cassette miss and persists
-the result, keyed by COHORT (opportunity_type, segment, a coarse
-rupees_at_risk band, and an envelope fingerprint) rather than by decision --
-that collapses tens of thousands of decisions down to a few dozen real API
-calls. `mode="replay"` never calls the API at all: a cassette hit returns the
-recorded candidates byte-identically (the reproducibility claim in
-SYSTEM_DESIGN.md section 1.2 survives an LLM in the loop only because of
-this), and a miss falls back to the template shelf unless `strict_replay=True`,
-which raises instead -- for CI, where a silent fallback would hide a stale or
-incomplete cassette.
+Every other piece of this design -- cohort-level cache keys, the cassette,
+the off/record/replay modes, the typed-exception split between "loud" and
+"degrade" -- is provider-agnostic by construction; the swap from Anthropic
+to Groq touched only this module's `_client()`/`_call()` and its exception
+types.
 """
 
 from __future__ import annotations
@@ -55,9 +53,9 @@ from revenew.models import (
     OpportunityType,
     Segment,
 )
-from revenew.settings import CLAUDE_MODEL, PolicyConfig
+from revenew.settings import GROQ_MODEL, PolicyConfig
 
-MODEL = CLAUDE_MODEL
+MODEL = GROQ_MODEL
 MAX_TOKENS = 4096  # 5-8 candidates with headlines + rationales truncate at 1024
 
 CANDIDATE_SET_SCHEMA = CandidateSet.model_json_schema()
@@ -80,6 +78,9 @@ downstream ranking system to choose between, not picking the single best one
 yourself. These candidates will be reused across every customer in this
 cohort, not just one -- do not reference any one customer's specific name or
 order history, only the cohort-level facts given to you.
+
+Respond with a JSON object matching the required schema exactly -- no prose,
+no markdown fencing, just the JSON object.
 """
 
 
@@ -127,11 +128,11 @@ def _client():
     in this codebase's history: constructing the SDK client succeeds with no
     key at all and only fails at request time, so the client object itself is
     not a usable availability check -- the resolved key is."""
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    if not os.environ.get("GROQ_API_KEY"):
         return None
-    import anthropic
+    import groq
 
-    return anthropic.Anthropic()
+    return groq.Groq()
 
 
 class CandidateGenerator:
@@ -149,7 +150,7 @@ class CandidateGenerator:
         self.cassette = cassette if cassette is not None else (Cassette() if mode != "off" else None)
         self.strict_replay = strict_replay
         # In "off" mode this stays None even if a credential is present --
-        # the default must never make a live call just because ANTHROPIC_API_KEY
+        # the default must never make a live call just because GROQ_API_KEY
         # happens to be set in the environment. Only "record"/"replay" resolve
         # a client (and even "replay" never actually calls it -- see generate()).
         self.client = None if mode == "off" else (client if client is not None else _client())
@@ -197,13 +198,13 @@ class CandidateGenerator:
             # see this as a miss and try again.
             return _template_fallback(segment, envelope, policy, store)
 
-        import anthropic  # local: keeps `anthropic` optional for off/replay-only callers
+        import groq  # local: keeps `groq` optional for off/replay-only callers
 
         band_label, band_value = rupees_band(rupees_at_risk)
         context = _prompt_context(opportunity_type, segment, band_label, band_value, envelope)
         try:
-            result = self._call(context, retry_hint=None)
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+            raw = self._call(context, retry_hint=None)
+        except (groq.AuthenticationError, groq.PermissionDeniedError):
             # A bad key must be loud in record mode -- this is precisely how
             # "the LLM never actually ran" stayed invisible for so long: a
             # bare `except Exception` here would silently downgrade to the
@@ -211,18 +212,25 @@ class CandidateGenerator:
             raise
         except Exception:
             # Connectivity, rate limit, timeout, 5xx -- degrade, don't die.
+            # NOTE: this is SDK-level failure only -- `_call()` itself never
+            # raises on a response that came back but wasn't valid JSON or
+            # didn't match the schema; that's "malformed", handled below via
+            # the retry, not "unreachable".
             return _template_fallback(segment, envelope, policy, store)
 
-        parsed = _try_parse(result)
+        parsed = _try_parse(raw) if raw is not None else None
         if parsed is None:
             # One retry with the schema echoed back, per the failure table.
+            # Covers both a non-JSON response and JSON that doesn't match
+            # CandidateSet's shape -- both are "the model responded but never
+            # produced anything usable", not a connectivity problem.
             try:
-                result2 = self._call(context, retry_hint=_schema_hint())
-            except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+                raw2 = self._call(context, retry_hint=_schema_hint())
+            except (groq.AuthenticationError, groq.PermissionDeniedError):
                 raise
             except Exception:
                 return _template_fallback(segment, envelope, policy, store)
-            parsed = _try_parse(result2)
+            parsed = _try_parse(raw2) if raw2 is not None else None
 
         if parsed is None:
             return None  # genuinely malformed twice -> no_action, per the failure table
@@ -230,36 +238,44 @@ class CandidateGenerator:
         self.cassette.put(key, parsed)
         return parsed
 
-    def _call(self, context: str, *, retry_hint: str | None) -> dict:
+    def _call(self, context: str, *, retry_hint: str | None) -> dict | None:
+        """Returns the parsed response body, or None if the model returned no
+        content or content that isn't valid JSON -- both count as "malformed
+        output" for the caller's retry logic, not as an SDK/connectivity
+        failure, so this method itself never raises on either.
+        """
         user_content = context if retry_hint is None else f"{context}\n\n{retry_hint}"
-        response = self.client.messages.create(
+        response = self.client.chat.completions.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            tools=[
-                {
-                    "name": "propose_candidates",
-                    "description": "Propose 5-8 candidate offers for this opportunity.",
-                    "input_schema": CANDIDATE_SET_SCHEMA,
-                    # Guarantees tool_use.input validates exactly against the
-                    # schema server-side -- CandidateSet/Candidate's
-                    # extra="forbid" (models.py) is what makes
-                    # additionalProperties:false true of the schema, which
-                    # this requires. Most of the "malformed JSON" failure
-                    # path becomes unreachable in practice; the retry-then-
-                    # None path stays for what strict mode can't catch (e.g.
-                    # a family/discount-shape combination the schema allows
-                    # but Candidate._one_discount_shape rejects).
-                    "strict": True,
-                }
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
             ],
-            tool_choice={"type": "tool", "name": "propose_candidates"},
-            messages=[{"role": "user", "content": user_content}],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "propose_candidates",
+                    "strict": True,
+                    # Guarantees the response validates exactly against the
+                    # schema via constrained decoding -- CandidateSet/
+                    # Candidate's extra="forbid" (models.py) is what makes
+                    # additionalProperties:false true of the schema, which
+                    # Groq's strict mode requires. Only honored on a handful
+                    # of Groq-hosted models (GROQ_MODEL defaults to one); on
+                    # any model that ignores strict, the retry-then-None path
+                    # above is what catches the resulting malformed output.
+                    "schema": CANDIDATE_SET_SCHEMA,
+                },
+            },
         )
-        for block in response.content:
-            if getattr(block, "type", None) == "tool_use" and block.name == "propose_candidates":
-                return block.input
-        raise ValueError("model response contained no propose_candidates tool call")
+        content = response.choices[0].message.content
+        if not content:
+            return None
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return None
 
 
 def _schema_hint() -> str:

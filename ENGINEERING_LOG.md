@@ -155,21 +155,24 @@ to the population size rather than inheriting the single-campaign default.
 
 ## Known limitations, disclosed rather than hidden
 
-**No Anthropic credential exists in this development environment.** Every
-full replay run to date has exercised `CandidateGenerator`'s degraded
-template-fallback path exclusively -- one candidate per decision, chosen by a
-greedy point-estimate argmax over the posterior, not genuine Thompson-sampled
-exploration across several LLM-composed options. `BanditScorer.choose()` is
-built, tested, and correctly implements Thompson sampling with cold-start
-pooling (verified directly: cold cells borrow cross-segment evidence, cells
-past 20 observations detach and use their own posterior) -- but a full
-replay's regret curve and posterior-recovery numbers, AS MEASURED SO FAR,
-report on the fallback path's performance, not the full system's. The
-regret/recovery machinery (`harness/regret.py`) is verified correct via two
-independent implementations (Python and SQL) agreeing exactly on a real run
-(1,002,998.2 == 1,002,998.2 cumulative regret, 8,959/8,959 matching decision
-rows) -- what's unverified is how the NUMBERS look once the LLM is actually in
-the loop, because it never has been in this environment.
+**No cassette has been recorded against a real LLM yet (see bugs #11-12
+below).** `CandidateGenerator` now supports genuine multi-candidate
+generation via Groq, cached per cohort, with `off`/`record`/`replay` modes
+and 12 tests passing against fakes -- but every full replay run to date still
+predates that fix, and no `--llm record` run has completed against the real
+API (blocked first on Anthropic credit, now on adding `GROQ_API_KEY`). Until
+that run happens, every existing regret curve and posterior-recovery table
+reports on the single-candidate fallback path's greedy argmax, not genuine
+Thompson-sampled exploration. `BanditScorer.choose()` is built, tested, and
+correctly implements Thompson sampling with cold-start pooling (verified
+directly: cold cells borrow cross-segment evidence, cells past 20
+observations detach and use their own posterior) -- what's unverified is how
+the numbers look once a real, multi-candidate LLM is actually in the loop.
+The regret/recovery machinery (`harness/regret.py`) is verified correct via
+two independent implementations (Python and SQL) agreeing exactly on a real
+run (1,002,998.2 == 1,002,998.2 cumulative regret, 8,959/8,959 matching
+decision rows) -- that verification is unaffected by which policy produced
+the decisions being graded.
 
 **`LiveAdapter` (Razorpay) has never been exercised against a real
 credential or the live API.** The `create_offer` -> Payment Link mapping is
@@ -188,3 +191,71 @@ periodic (e.g. monthly) reset. This is a scope decision, not an oversight --
 concept, and adding one was not asked for. `run_replay`'s budget scaling
 (bug/note #10 above) works around the mismatch this creates for a multi-week
 simulation without changing the underlying semantics.
+
+---
+
+## 11. The bandit had never actually chosen anything
+
+Found by reading the code, not by a failing test -- which is itself the
+lesson: nothing above caught this because everything above was written
+*assuming* the LLM path would eventually run, and it never had.
+`CandidateGenerator`'s no-credential fallback (`_template_fallback`) always
+returned a `CandidateSet` with exactly ONE candidate. `BanditScorer.choose()`
+computes `families = sorted({c.action_family for c in candidates})` and
+Thompson-samples over that set -- with one candidate, `families` has exactly
+one element, `max()` over one value is forced, and
+`_estimate_propensity` returns 1.0 on every single decision. Every regret
+curve and posterior-recovery table this project had produced up to this
+point graded a **greedy argmax over posterior point estimates**, not the
+Thompson sampling SYSTEM_DESIGN.md section 6 describes and
+`tests/test_replay_equality.py` exercises directly (correctly, but only ever
+against hand-built multi-candidate fixtures, never through a real replay).
+
+Fixed by putting a genuine, multi-candidate LLM in the loop for real, which
+required solving two things the original single-LLM-call-per-decision design
+would have made infeasible or unreproducible: cost (a 3,000-customer,
+30-day replay is on the order of tens of thousands of decisions; one call
+each is tens of millions of tokens) and determinism (an LLM call inside a
+replayed decision path breaks "same seed => byte-identical posteriors").
+`revenew/decide/cassette.py` keys generation on the COHORT --
+`(opportunity_type, segment, a coarse rupees_at_risk band, an envelope
+composition fingerprint)` -- collapsing the call count to a few dozen, and
+persists every recorded `CandidateSet` to a committed JSON directory so a
+later run reproduces byte-identically without ever calling the API again.
+`CandidateGenerator` gained `off`/`record`/`replay` modes, defaulting to
+`off` so no existing caller's behaviour changed just because a credential
+happened to be present.
+
+## 12. No Anthropic billing available; switched the LLM provider to Groq
+
+While wiring the above fix, `ANTHROPIC_API_KEY` resolved correctly and the
+network path to `api.anthropic.com` worked -- but every real call returned
+`400 invalid_request_error: Your credit balance is too low`, confirmed with a
+minimal direct call (`max_retries=0`, 0.6s to fail). Worth recording
+precisely because of what it looked like from the *outside* first: a
+`--llm record` replay run produced zero output and zero cassette files for
+several minutes before being killed, which looked like a hang. It wasn't --
+`_call()`'s failure path degrades to the templated fallback WITHOUT caching
+the miss (deliberately: a transient failure must not poison the cassette
+with a fake "recording"), so every decision in an affected cohort was
+retrying the same instantly-failing request, once per decision, for the
+whole run. A `time.perf_counter()` around the very first live call before
+trusting a multi-thousand-decision run would have surfaced this in under a
+second; killing and re-diagnosing with a bounded, `max_retries=0` direct
+script did the same after the fact.
+
+No Anthropic credit was available to add, so the LLM provider was switched to
+Groq -- a disclosed deviation from SYSTEM_DESIGN.md section 3.1's stated
+"Claude (Sonnet tier)". The swap stayed contained to
+`revenew/decide/generator.py`'s `_client()`/`_call()` and its exception
+types: cohort-level cache keys, the cassette, the three modes, and the
+loud-vs-degrade exception split are all provider-agnostic by construction.
+Structured output uses Groq's `response_format={"type": "json_schema", ...,
+"strict": True}` rather than Anthropic's forced `strict` tool call --
+functionally equivalent (constrained decoding guarantees schema-valid
+output), but as of this writing only honored by a handful of Groq-hosted
+models (`openai/gpt-oss-20b`/`120b`, `qwen/qwen3-32b`); `GROQ_MODEL` defaults
+to the 20b variant. `GROQ_API_KEY` still needs to be added to `.env` before
+the actual cassette-recording run can happen -- the generator, cassette, and
+all 12 of `tests/test_generator.py`'s cases are verified against fakes, but
+no cassette has been recorded against the real API yet.
