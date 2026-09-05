@@ -228,3 +228,40 @@ harness.db
 harness.db-wal
 harness.db-shm
 *.db-journal
+# Every other SQLite file too -- scratch runs, comparison runs, and the local
+# demo_snapshot.db fallback. Databases are build output here: `revenew demo`
+# regenerates all of it from the committed cassette, so none of it belongs in
+# git. The cassette (cassettes/) is the thing that IS committed, deliberately.
+*.db
+*.db-wal
+*.db-shm
+
+# ------------------------------------------------------------------ frontend
+# The React console's source lives in frontend/. Its dependencies do not
+# belong in git; its BUILD OUTPUT deliberately does.
+frontend/node_modules/
+frontend/.vite/
+frontend/*.local
+
+# Un-ignore the console's own source. `lib/` near the top of this file is a
+# stock Python-packaging rule (it means a virtualenv's lib/), and it is
+# unanchored, so it also silently swallowed `frontend/src/lib/` -- which
+# holds util.js: the hash router, the cached API client, the formatters and
+# the playback clock. A fresh clone would have been missing it and the
+# console could not build at all, with nothing saying why.
+#
+# The directory has to be re-included BEFORE its contents: git will not
+# re-include a file whose parent directory is still excluded.
+!frontend/src/lib/
+!frontend/src/lib/**
+
+# revenew/api/static/ is the built console, and it IS committed -- see the
+# note in pyproject.toml. The README promises `pip install -e . && revenew
+# serve` with no other toolchain, and a judge cloning this repo should not
+# need node installed to open the dashboard. This is the same reasoning that
+# commits the LLM cassettes rather than requiring an API key.
+!revenew/api/static/
+DEMO_SCRIPT.md
+DESIGN-clickhouse.md 
+PLAN.md 
+/.claude

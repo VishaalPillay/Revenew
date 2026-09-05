@@ -1,0 +1,49 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off Hoodie to complete your look",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A03"
+      ],
+      "rationale": "Cross‑sell apparel to active customers by offering a discount on a complementary hoodie"
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹100 off your next Backpack",
+      "discount_pct": null,
+      "discount_amount": 100.0,
+      "skus": [],
+      "rationale": "Encourage accessory cross‑sell by giving a modest flat coupon for the backpack"
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle Hoodie & Runner Low for a full outfit",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A03",
+        "SKU-F01"
+      ],
+      "rationale": "Cross‑sell apparel and footwear together, appealing to active shoppers seeking a complete look"
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹200 loyalty credit on your next order",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Reward active customers to increase future spend and improve retention"
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Explore new arrivals in your favorite categories",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Gentle reminder to keep active customers engaged without incurring cost"
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off Classic Tee—Your favorite style, now cheaper",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01"
+      ],
+      "rationale": "Re‑engage lapsing customers by offering a compelling discount on a high‑margin apparel staple."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹200 off your next order—just for you",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "A low‑bar coupon to nudge dormant shoppers back into purchase flow."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle Deal: Cap + Socks 3pk, 20% off the combo",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C01",
+        "SKU-C03"
+      ],
+      "rationale": "Combining complementary accessories creates a perceived higher value and encourages cross‑category purchase."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹150 loyalty credit on your next buy",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "Reward lapsing customers with instant credit to reduce the psychological barrier of spending."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off Cap—Grab it before it’s gone",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C01"
+      ],
+      "rationale": "Targeting a popular accessory with a moderate discount re‑ignites interest without eroding margin."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Explore our newest arrivals—fresh styles waiting for you",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A gentle reminder keeps the brand top of mind for lapsing customers without cost."
+    }
+  ]
+}

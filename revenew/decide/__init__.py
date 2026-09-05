@@ -3,10 +3,20 @@
 `decide_one_opportunity` is the orchestrator diagram 2 depicts: envelope in,
 LLM candidates out, validator drops the illegal ones, bandit picks a winner
 from what survives, budget is reserved, the chosen offer is EXECUTED against
-Razorpay, and the whole thing is traced. Both the live webhook path
-(revenew/api/webhooks.py) and the replay driver (harness/run_replay.py) call
-this SAME function -- there is one decision path in this codebase, not a
-live one and a separate replay one that happen to agree.
+Razorpay, and the whole thing is traced.
+
+Its only real callers today are the replay driver (`harness/run_replay.py`)
+and tests -- there is one decision path in this codebase, not a live one and
+a separate replay one that happen to agree, but "live" here currently means
+`revenew replay --llm record|replay` against a real database, not the
+webhook receiver. `revenew/api/webhooks.py` records a verified delivery and
+stops; it does not call this function, and an earlier version of this
+docstring claimed it did. Closing that loop -- a real payment's webhook
+feeding an OUTCOME back to the bandit via `revenew/ledger/outcome.py`'s
+`record_outcome`, which already exists and already updates posteriors -- is
+a different, smaller thing than calling `decide_one_opportunity` again: a
+webhook confirms or denies a decision already made, it does not need to make
+a new one.
 """
 
 from __future__ import annotations
@@ -20,7 +30,7 @@ from revenew.decide.envelope import EnvelopeEngine, EnvelopeValidator
 from revenew.decide.generator import CandidateGenerator
 from revenew.decide.trace import mark_executed, persist_decision
 from revenew.execute import budget
-from revenew.execute.razorpay import FixtureAdapter, RazorpayAdapter, execute_decision
+from revenew.execute.razorpay import RazorpayAdapter, build_adapter, execute_decision
 from revenew.models import (
     Decision,
     DecisionStatus,
@@ -54,6 +64,7 @@ def decide_one_opportunity(
     bandit_seed: int,
     now: datetime,
     adapter: RazorpayAdapter | None = None,
+    strategy: str = "thompson",
 ) -> Decision:
     """Runs the full decision path for one TREATMENT-arm opportunity.
 
@@ -71,12 +82,21 @@ def decide_one_opportunity(
     `PosteriorStore.get()` fall back to the in-memory prior rather than error
     -- but every real entry point in this codebase initializes it upfront.
 
-    `adapter` defaults to `FixtureAdapter()` -- no network call, a synthetic
-    id -- so every existing caller (every test, every replay run) keeps
-    behaving exactly as before unless it explicitly opts into `LiveAdapter`.
+    `adapter` defaults to `build_adapter()`'s choice -- `FixtureAdapter`
+    (no network call, a synthetic id) unless `REVENEW_EXECUTION_MODE=live` is
+    set AND both Razorpay credentials are present, in which case it is a real
+    `LiveAdapter`. Every existing caller (every test, every replay run) keeps
+    behaving exactly as before unless that env var is explicitly set --
+    passing an explicit `adapter=` here always overrides it either way.
+
+    `strategy` ("thompson", the default, or "greedy") is forwarded verbatim
+    to `BanditScorer.choose()` -- see bandit.py. It is the entire lever
+    PLAN.md section 5's three-arm ablation needs: same candidates, same
+    posteriors, same validator, only the scoring rule changes.
     """
     store = PosteriorStore(conn)
     envelope = EnvelopeEngine.build(conn, policy)
+    catalog = EnvelopeEngine.load_catalog(conn)
     order_value = _customer_order_value(conn, customer_id)
     decision_id = str(uuid.uuid4())
 
@@ -95,7 +115,7 @@ def decide_one_opportunity(
 
     candidate_set = generator.generate(
         opportunity_type=opportunity_type, segment=segment, rupees_at_risk=rupees_at_risk,
-        envelope=envelope, store=store, policy=policy,
+        envelope=envelope, store=store, policy=policy, catalog=catalog, conn=conn,
     )
     if candidate_set is None:
         return no_action(NoActionReason.LLM_UNAVAILABLE)
@@ -109,7 +129,7 @@ def decide_one_opportunity(
         return no_action(NoActionReason.ALL_CANDIDATES_INVALID, candidates=verdicts)
 
     scorer = BanditScorer(store, seed=bandit_seed)
-    choice = scorer.choose(segment, valid, fallback_revenue=rupees_at_risk)
+    choice = scorer.choose(segment, valid, fallback_revenue=rupees_at_risk, strategy=strategy)
 
     cost = choice.candidate.estimated_cost(order_value)
     if cost > envelope.budget_remaining:
@@ -138,9 +158,9 @@ def decide_one_opportunity(
     budget.reserve(conn, decision_id, cost, now=now)
 
     if adapter is None:
-        adapter = FixtureAdapter()
+        adapter = build_adapter()
     spec = OfferSpec(
-        customer_id=customer_id, action_family=choice.candidate.action_family,
+        decision_id=decision_id, customer_id=customer_id, action_family=choice.candidate.action_family,
         headline=choice.candidate.headline, amount=cost,
         discount_pct=choice.candidate.discount_pct, discount_amount=choice.candidate.discount_amount,
         skus=choice.candidate.skus,

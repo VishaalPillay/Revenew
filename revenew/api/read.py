@@ -19,6 +19,7 @@ import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from revenew.api.theatre import build_timeline
 from revenew.api.webhooks import get_conn
 from revenew.decide.bandit import PosteriorStore
 from revenew.measure.report import build_report, get_decision_trace, lift_to_dict
@@ -55,9 +56,15 @@ def report(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
             "validity_rate": r.candidate_validity.validity_rate,
             "total_generated": r.candidate_validity.total_generated,
             "total_valid": r.candidate_validity.total_valid,
+            "policy_violations": r.candidate_validity.policy_violations,
+            "eligibility_blocked": r.candidate_validity.eligibility_blocked,
+            "budget_blocked": r.candidate_validity.budget_blocked,
+            "policy_compliance_rate": r.candidate_validity.policy_compliance_rate,
         },
         "budget_consumed": r.budget_consumed,
         "regret_curve": r.regret_curve,
+        "regret_curve_all": r.regret_curve_all,
+        "learning_curve": r.learning_curve,
         "posterior_recovery": r.posterior_recovery,
     }
 
@@ -81,7 +88,10 @@ def list_decisions(
     rows = conn.execute(
         f"SELECT decision_id, opportunity_id, run_id, segment, action_family, status, "  # noqa: S608
         f"no_action_reason, propensity, created_at FROM decisions {where} "
-        f"ORDER BY created_at DESC LIMIT ?",
+        # opportunity_id (content-addressed), not decision_id (random per
+        # run), breaks a same-`created_at` tie -- see theatre.py/dashboard.py
+        # for the same fix and why it matters for reproducibility.
+        f"ORDER BY created_at DESC, opportunity_id DESC LIMIT ?",
         (*params, limit),
     ).fetchall()
     return {"decisions": [dict(r) for r in rows], "count": len(rows)}
@@ -145,6 +155,43 @@ def posteriors(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     }
 
 
+# `build_timeline` walks every reward in the run to rebuild the belief
+# history, which costs a few seconds on a 90-day database -- fine once,
+# unacceptable on every page load. The cache key is (run_id, decision count):
+# a replay only ever appends, so a changed count is a changed run and any
+# in-flight `revenew demo` invalidates this the moment it writes. Holding one
+# built timeline is a few hundred KB, and the alternative -- recomputing on
+# each request -- is what would make the theatre stutter live on stage.
+_TIMELINE_CACHE: dict[tuple[str | None, int], dict] = {}
+
+
+@router.get("/api/theatre")
+def theatre(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
+    """The run as a per-day timeline: cumulative counters, the 20-cell
+    posterior grid rebuilt as of each day, and a sampled ticker of the
+    offers the bandit actually sent. See `revenew/api/theatre.py` for why
+    this is assembled server-side and animated client-side rather than
+    streamed."""
+    # Same 'live_%' and 'agent_%' exclusion as theatre.py's _latest_run_id() — a live
+    # or agent decision must not bust this cache and point the Theatre at a
+    # one-decision run.
+    key = (
+        conn.execute(
+            "SELECT run_id FROM decisions WHERE run_id NOT LIKE 'live_%' AND run_id NOT LIKE 'agent_%' "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        or {"run_id": None}
+    )["run_id"]
+    n = conn.execute("SELECT COUNT(*) AS n FROM decisions").fetchone()["n"]
+    cached = _TIMELINE_CACHE.get((key, n))
+    if cached is None:
+        t = build_timeline(conn)
+        cached = {"meta": t.meta, "frames": t.frames, "events": t.events, "truth": t.truth}
+        _TIMELINE_CACHE.clear()
+        _TIMELINE_CACHE[(key, n)] = cached
+    return cached
+
+
 @router.get("/api/regret")
 def regret(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     """The exported cumulative regret curve for the most recent replay run,
@@ -153,4 +200,9 @@ def regret(conn: sqlite3.Connection = Depends(get_conn)) -> dict:
     chart plots -- one series, not a separate full-resolution copy that could
     disagree with what's shown on screen."""
     r = build_report(conn)
-    return {"run_id": r.run_id, "regret_curve": r.regret_curve}
+    return {
+        "run_id": r.run_id,
+        "regret_curve": r.regret_curve,
+        "regret_curve_all": r.regret_curve_all,
+        "learning_curve": r.learning_curve,
+    }

@@ -20,18 +20,18 @@ BUDGET_CAP = 10_000.0
 def _make_decision(conn, decision_id: str, customer_id: str = "cus1") -> None:
     conn.execute("INSERT OR IGNORE INTO customers VALUES (?, ?)", (customer_id, iso(NOW)))
     conn.execute(
-        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
         (f"opp_{decision_id}", "run1", customer_id, "dormant_winback", "w1",
-         "dormant_winback", 500, "h", iso(NOW)),
+         "dormant_winback", 500, "h", iso(NOW), None),
     )
     conn.execute(
         "INSERT INTO opportunities VALUES (?,?,?,?,?,?,?)",
         (f"opp_{decision_id}", "run1", customer_id, "w1", "dormant", "treatment", iso(NOW)),
     )
     conn.execute(
-        "INSERT INTO decisions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO decisions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (decision_id, f"opp_{decision_id}", "run1", "dormant", "percent_discount", "{}",
-         1, 1, "{}", 0.5, "executed", None, iso(NOW)),
+         1, 1, "{}", 0.5, "executed", None, iso(NOW), "internal"),
     )
     conn.commit()
 

@@ -90,9 +90,9 @@ def test_database_rejects_a_second_winner_for_the_same_customer_window(seeded_co
     """The actual F2 guarantee. If the arbiter ever had a bug and tried to
     insert two winners for one (customer, window), this is what stops it."""
     seeded_conn.execute(
-        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
         ("opp1", "run1", "cus_000001", "dormant_winback", "w1", "dormant_winback",
-         500.0, "hash1", "2026-01-01T00:00:00+00:00"),
+         500.0, "hash1", "2026-01-01T00:00:00+00:00", None),
     )
     seeded_conn.execute(
         "INSERT INTO opportunities VALUES (?,?,?,?,?,?,?)",
@@ -101,9 +101,9 @@ def test_database_rejects_a_second_winner_for_the_same_customer_window(seeded_co
     seeded_conn.commit()
 
     seeded_conn.execute(
-        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
         ("opp2", "run1", "cus_000001", "cross_sell_affinity", "w1", "cross_sell_affinity",
-         900.0, "hash2", "2026-01-01T00:00:00+00:00"),
+         900.0, "hash2", "2026-01-01T00:00:00+00:00", None),
     )
     with pytest.raises(sqlite3.IntegrityError):
         seeded_conn.execute(

@@ -1,0 +1,59 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Enjoy 15% off your next Slim Jeans",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02"
+      ],
+      "rationale": "The active cohort shows a strong affinity for apparel; a modest 15% discount on Slim Jeans nudges them toward purchase without exceeding the 20% cap."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "$150 off any apparel purchase",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "Offering a $150 flat coupon on apparel capitalizes on cross‑sell affinity while staying well below the Rs 500 absolute discount limit."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle deal: Slim Jeans + Socks 3pk at 10% off",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C03"
+      ],
+      "rationale": "Customers buying jeans often pair with socks; a 10% bundled discount leverages this affinity and keeps the offer within the 20% discount cap."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 200 loyalty points on your next order",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Active shoppers value loyalty rewards; a 200‑point credit encourages repeat engagement without affecting cost."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Check out our new arrivals",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A zero‑cost reminder nudge keeps the brand top‑of‑mind and taps into cross‑sell affinity by prompting exploration of related products."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off Backpack",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "A maximum 20% discount on the Backpack aligns with the envelope limits and targets the active segment’s interest in accessories, driving cross‑sell."
+    }
+  ]
+}

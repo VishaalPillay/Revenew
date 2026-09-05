@@ -1,0 +1,48 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off on your first order – upgrade your style",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A 15% discount on all apparel and accessories encourages new customers to make their first purchase and boosts retention."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "$300 off your first order – welcome to the collection",
+      "discount_pct": null,
+      "discount_amount": 300.0,
+      "skus": [],
+      "rationale": "A $300 coupon directly reduces the cost barrier for high‑value first orders, increasing conversion in the over Rs2000 risk band."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle your basics: Classic Tee + Cap + Socks 3pk 20% off",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01",
+        "SKU-C03"
+      ],
+      "rationale": "Bundling complementary items at 20% off encourages higher basket size and cross‑sell within the apparel and accessories categories."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn Rs200 loyalty credit on your first purchase",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Granting loyalty credit motivates a future purchase and helps lock in new customers for repeat business."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Need help finding your style? Check out our top picks",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A zero‑cost nudge reminds new shoppers of curated selections, improving engagement without exceeding budget constraints."
+    }
+  ]
+}

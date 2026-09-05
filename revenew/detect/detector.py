@@ -128,6 +128,11 @@ class RawOpportunity:
     rupees_at_risk: float
     detector_query_hash: str
     detected_at: str
+    # Only cross_sell_affinity's query projects this column; every other
+    # query's rows simply don't have the key, which is why this is read via
+    # `row.keys()` rather than `row["recommended_sku"]` at the call site --
+    # sqlite3.Row raises IndexError on a column the query never selected.
+    recommended_sku: str | None = None
 
 
 class OpportunityDetector:
@@ -174,6 +179,7 @@ class OpportunityDetector:
             sql = self._queries[otype.value]
             params = params_by_type[otype]
             for row in conn.execute(sql, params).fetchall():
+                keys = row.keys()
                 out.append(
                     RawOpportunity(
                         opportunity_id=_opportunity_id(run_id, window_id, otype, row["customer_id"]),
@@ -185,6 +191,7 @@ class OpportunityDetector:
                         rupees_at_risk=float(row["rupees_at_risk"]),
                         detector_query_hash=self._hashes[otype.value],
                         detected_at=detected_at,
+                        recommended_sku=row["recommended_sku"] if "recommended_sku" in keys else None,
                     )
                 )
         return out
@@ -194,13 +201,14 @@ class OpportunityDetector:
             """
             INSERT INTO opportunity_candidates
                 (opportunity_id, run_id, customer_id, opportunity_type, window_id,
-                 cohort_id, rupees_at_risk, detector_query_hash, detected_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cohort_id, rupees_at_risk, detector_query_hash, detected_at, recommended_sku)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     c.opportunity_id, c.run_id, c.customer_id, c.opportunity_type.value,
                     c.window_id, c.cohort_id, c.rupees_at_risk, c.detector_query_hash, c.detected_at,
+                    c.recommended_sku,
                 )
                 for c in candidates
             ],

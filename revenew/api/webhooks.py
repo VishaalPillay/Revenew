@@ -25,6 +25,24 @@ and reading exactly what came back:
    `hmac.new(secret, raw_body, hashlib.sha256).hexdigest()` against a real
    captured `(body, signature)` pair reproduced the signature exactly. See
    SYSTEM_DESIGN.md section 11 and ENGINEERING_LOG.md for the full story.
+
+**What a verified delivery does beyond recording it, and the one thing left
+UNVERIFIED.** `payment.captured`/`payment.failed` are mapped back to a
+decision via `notes.decision_id` (`LiveAdapter.create_offer` sets it --
+`revenew/execute/razorpay.py`) and fed to `record_outcome`
+(`revenew/ledger/outcome.py`), which already updates the bandit's posteriors
+-- no new learning code, this only supplies it a real trigger. This is the
+one assumption in this module that is NOT yet confirmed against a real
+capture the way the dedup key and signature scheme are: whether Razorpay
+copies a Payment Link's `notes` onto the `payment` entity created when a
+customer pays it is standard, documented Razorpay behavior, but unlike the
+dedup/signature fixes above, nobody has captured a real delivery through
+THIS project's own payment-link flow to confirm it end to end. If it turns
+out not to hold, the failure mode is silent-safe by construction: `notes`
+missing or not a dict (the real capture below shows it can be an empty
+LIST, not a dict, when nothing set it) means `_decision_id_from_notes`
+returns `None`, the event is still recorded, and no outcome is written --
+never a crash, never a wrong outcome attributed to the wrong decision.
 """
 
 from __future__ import annotations
@@ -40,9 +58,91 @@ from fastapi.responses import JSONResponse
 
 from revenew.clock import WallClock, iso
 from revenew.db import connect
+from revenew.ledger.outcome import record_outcome
 from revenew.settings import RAZORPAY_WEBHOOK_SECRET, RAZORPAY_WEBHOOK_SECRET_PLACEHOLDER
 
 router = APIRouter()
+
+# The only two events this handler acts on beyond recording. Everything else
+# Razorpay might send (payment.authorized, order.paid, refund.*, ...) is
+# recorded into `events` like any other delivery and otherwise ignored --
+# explicitly, not by omission, so a future reader can see the boundary was a
+# choice.
+_OUTCOME_EVENTS = {"payment.captured", "payment.failed"}
+
+
+def _decision_id_from_notes(payload: dict) -> str | None:
+    """`payload.payment.entity.notes.decision_id`, or `None` if any step of
+    that path is missing or the wrong shape.
+
+    `notes` is a Razorpay-controlled field: it is a dict when the merchant
+    set one (LiveAdapter always does now), but a REAL captured delivery for
+    a payment made with no notes set shows `"notes":[]` -- an empty LIST,
+    not `{}`. `.get` on a list would raise `AttributeError`, so the isinstance
+    check is load-bearing, not defensive boilerplate."""
+    try:
+        notes = payload["payload"]["payment"]["entity"]["notes"]
+    except (KeyError, TypeError):
+        return None
+    if not isinstance(notes, dict):
+        return None
+    decision_id = notes.get("decision_id")
+    return decision_id if isinstance(decision_id, str) and decision_id else None
+
+
+def _payment_amount_rupees(payload: dict) -> float | None:
+    """`payload.payment.entity.amount` is in paise, per Razorpay convention
+    (see LiveAdapter's own `amount_paise` conversion) -- converted back to
+    rupees here since that is the unit every other outcome in this system
+    (`outcomes.net_revenue`, the fixture's `OutcomeOracle`) is recorded in."""
+    try:
+        amount_paise = payload["payload"]["payment"]["entity"]["amount"]
+    except (KeyError, TypeError):
+        return None
+    if not isinstance(amount_paise, int | float):
+        return None
+    return amount_paise / 100.0
+
+
+def _record_outcome_from_webhook(conn: sqlite3.Connection, *, event_type: str, payload: dict, now) -> None:
+    """Best-effort: a payment this handler cannot attribute to a decision is
+    not an error, it is simply outside what this handler can act on -- see
+    the module docstring for exactly which failure this degrades from."""
+    decision_id = _decision_id_from_notes(payload)
+    if decision_id is None:
+        return
+
+    decision = conn.execute(
+        "SELECT opportunity_id FROM decisions WHERE decision_id = ?", (decision_id,)
+    ).fetchone()
+    if decision is None:
+        # A decision_id that does not exist in THIS database -- plausible if
+        # the webhook secret/URL is shared across environments, or a replay
+        # database was swapped out from under a running server. Recording
+        # nothing is the safe choice; there is no decision here to attach an
+        # outcome to.
+        return
+
+    converted = event_type == "payment.captured"
+    net_revenue = (_payment_amount_rupees(payload) or 0.0) if converted else 0.0
+
+    try:
+        record_outcome(
+            conn,
+            opportunity_id=decision["opportunity_id"],
+            decision_id=decision_id,
+            converted=converted,
+            net_revenue=net_revenue,
+            censored=False,  # a captured or failed payment is definitive, not a timeout
+            closed_at=iso(now),
+        )
+    except sqlite3.IntegrityError:
+        # This opportunity's window was already closed -- by an earlier
+        # delivery under a different event_id, or by the nightly resolver
+        # racing this webhook. outcomes.opportunity_id is UNIQUE and the
+        # table is append-only by trigger; a second attempt is a no-op, not
+        # a failure worth surfacing as one.
+        pass
 
 
 def _verify_signature(raw_body: bytes, signature: str | None) -> bool:
@@ -79,10 +179,12 @@ async def razorpay_webhook(request: Request, conn: sqlite3.Connection = Depends(
     # the parsed dict for verification would silently change key order/
     # whitespace and break every signature, since Razorpay signs exactly what
     # it sent over the wire, not a semantically-equivalent re-encoding.
+    signature_verified = False
     if RAZORPAY_WEBHOOK_SECRET and RAZORPAY_WEBHOOK_SECRET != RAZORPAY_WEBHOOK_SECRET_PLACEHOLDER:
         signature = request.headers.get("X-Razorpay-Signature")
         if not _verify_signature(body, signature):
             return JSONResponse({"error": "invalid signature"}, status_code=400)
+        signature_verified = True
     else:
         # Deliberately not silent: a placeholder secret means verification is
         # OFF, and every unsigned request is being accepted -- that must be
@@ -116,17 +218,43 @@ async def razorpay_webhook(request: Request, conn: sqlite3.Connection = Depends(
 
     try:
         conn.execute(
-            "INSERT INTO events (event_id, event_type, payload_json, received_at) VALUES (?, ?, ?, ?)",
-            (event_id, event_type, body.decode("utf-8", errors="replace"), iso(now)),
+            "INSERT INTO events (event_id, event_type, payload_json, received_at, signature_verified) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_id, event_type, body.decode("utf-8", errors="replace"), iso(now), int(signature_verified)),
         )
         conn.commit()
     except sqlite3.IntegrityError:
         # Duplicate delivery. Per the failure-mode table: ignore, 200 OK.
         return JSONResponse({"status": "duplicate_ignored"}, status_code=200)
 
-    # The fast trigger's job ends at "an event is durably recorded". Waking
-    # the detector for a single customer in response to one webhook, rather
-    # than waiting for the nightly SlowTrigger, is real future work -- this
-    # process currently relies on the nightly rebuild to pick up what this
-    # event implies. Recording it now means nothing is lost in the meantime.
+    # The fast trigger's job used to end here, at "an event is durably
+    # recorded" -- waking the detector for a single customer in response to
+    # one webhook, rather than waiting for the nightly SlowTrigger, is still
+    # real future work. But a payment outcome is not a new decision to make;
+    # it is the answer to a decision already made, and recording that answer
+    # (which is what actually feeds the bandit) does not need to wait for
+    # any nightly rebuild -- see `_record_outcome_from_webhook`.
+    #
+    # GATED ON A VERIFIED SIGNATURE, and that gate is the whole point.
+    # Recording an unverified delivery into `events` is harmless: nothing
+    # downstream reads that table, so the placeholder-secret setup path can
+    # accept-and-warn without consequence. Recording an OUTCOME is the
+    # opposite -- `outcomes` is append-only by trigger (no UPDATE, no DELETE)
+    # and `record_outcome` feeds `posteriors` directly, so a single forged
+    # `payment.captured` naming a real decision_id would permanently teach
+    # the bandit a conversion that never happened, with no way to retract it.
+    # An unauthenticated caller must never be able to reach that. This
+    # asymmetry is deliberate: keep accepting unsigned deliveries during
+    # setup, but never let one change what the system believes.
+    if event_type in _OUTCOME_EVENTS:
+        if signature_verified:
+            _record_outcome_from_webhook(conn, event_type=event_type, payload=payload, now=now)
+        else:
+            print(
+                f"WARNING: {event_type} delivery {event_id} recorded but NOT applied as an "
+                "outcome -- its signature was not verified (RAZORPAY_WEBHOOK_SECRET unset or "
+                "still the .env.example placeholder). Configure the secret to close the "
+                "learning loop; an unverified payment must not move the bandit."
+            )
+
     return JSONResponse({"status": "recorded", "event_id": event_id}, status_code=200)

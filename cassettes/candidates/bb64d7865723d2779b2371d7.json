@@ -1,0 +1,58 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off on your next Slim Jeans",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Dormant customers risk >Rs 2000, a 20% discount on a high‑value item can spark a return purchase"
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Rs150 off your next order",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "A generous coupon for high‑spend shoppers encourages them to re‑engage"
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle deal: Classic Tee + Cap, 15% off",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Complementary apparel and accessory items increase basket size while keeping the offer enticing"
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Shop Slim Jeans + Backpack together and save 20%",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02"
+      ],
+      "rationale": "Combining a popular apparel item with a versatile accessory boosts order value and urgency"
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Get Rs200 credit toward your next order",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Providing a modest credit rewards return visits and increases loyalty perception"
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you! Check out our latest collection",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A gentle, cost‑free nudge reminds dormant customers of new products and re‑engages them"
+    }
+  ]
+}

@@ -49,11 +49,41 @@ from typing import Protocol
 
 from revenew.clock import iso
 from revenew.models import ExecutionResult, LinkSpec, OfferSpec
+from revenew.settings import RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, REVENEW_EXECUTION_MODE
 
 
 class RazorpayAdapter(Protocol):
     def create_offer(self, spec: OfferSpec, idempotency_key: str) -> ExecutionResult: ...
     def create_payment_link(self, spec: LinkSpec, idempotency_key: str) -> ExecutionResult: ...
+
+
+def build_adapter() -> RazorpayAdapter:
+    """The execution-mode switch. Reads `REVENEW_EXECUTION_MODE` and the
+    Razorpay credentials from `revenew.settings` and returns whichever
+    adapter that combination actually supports.
+
+    Before this function existed, there was no live/fixture switch anywhere
+    in the codebase: `decide_one_opportunity` hardcoded `FixtureAdapter()`,
+    and `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` were read by zero files under
+    `revenew/`. The honest answer to "where do we use the Razorpay test API"
+    was "in one opt-in test, and nowhere else" -- this is what changes that,
+    deliberately conservatively: "live" is requested by an explicit env var,
+    AND it silently degrades to `FixtureAdapter` (never raises) whenever a
+    credential is missing, so a misconfigured merchant environment fails
+    into "nothing sent" rather than a traceback mid-decision. Only ever
+    called from inside `decide_one_opportunity`'s per-call default, never as
+    a literal parameter default -- a literal default is evaluated once at
+    import time, which would freeze whatever the environment looked like the
+    moment this module first loaded rather than reflecting it at call time.
+    """
+    if REVENEW_EXECUTION_MODE == "live" and RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
+        return LiveAdapter(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET)
+    if REVENEW_EXECUTION_MODE == "live":
+        print(
+            "REVENEW_EXECUTION_MODE=live but RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET are not "
+            "both set -- falling back to FixtureAdapter (no real payment link will be created)."
+        )
+    return FixtureAdapter()
 
 
 def idempotency_key_for(decision_id: str) -> str:
@@ -124,7 +154,17 @@ class LiveAdapter:
             "amount": amount_paise,
             "currency": "INR",
             "description": spec.headline,
-            "notes": {"action_family": spec.action_family.value, "customer_id": spec.customer_id},
+            # decision_id is what makes a webhook delivery for this payment
+            # attributable: Razorpay echoes `notes` back verbatim on every
+            # event, so `payload.payment.entity.notes.decision_id` is how a
+            # verified `payment.captured`/`payment.failed` delivery maps back
+            # to the decision it resolves, and from there to the outcome
+            # `revenew/ledger/outcome.py`'s `record_outcome` writes.
+            "notes": {
+                "decision_id": spec.decision_id,
+                "action_family": spec.action_family.value,
+                "customer_id": spec.customer_id,
+            },
         }
         # NOT idempotency_key=idempotency_key here -- the razorpay SDK forwards
         # unrecognized kwargs straight through to requests.Session.post(),

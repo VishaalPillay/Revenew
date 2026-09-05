@@ -1,0 +1,55 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off the Cap that pairs with your favorite tee",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Cross‑sell an accessory that complements apparel buyers, encouraging a repeat purchase"
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Save ₹300 on your next apparel order",
+      "discount_pct": null,
+      "discount_amount": 300.0,
+      "skus": [],
+      "rationale": "Incentivise lapsing customers to return with a substantial, affordable coupon"
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle Classic Tee with a Cap and enjoy a special price",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Offer a logical apparel‑accessory combo to boost cart size and relevance"
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹200 credit toward your next purchase",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Reward lapsing customers with a credit that nudges them back into buying"
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you – your cart still awaits!",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Gentle reminder to re-engage customers who have abandoned a cart"
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off Hoodie for a fresh look",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Target customers with apparel affinity by offering a mid‑tier style discount"
+    }
+  ]
+}

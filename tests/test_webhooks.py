@@ -26,7 +26,17 @@ from revenew.api.webhooks import get_conn
 from revenew.api.webhooks import router as webhooks_router
 from revenew.db import init_db
 
-REAL_SECRET = "Superce11"
+# The key the captured delivery below was actually signed with. It has to
+# live here as a literal: HMAC verification needs the exact key that produced
+# `REAL_CAPTURED_SIGNATURE`, so reading it from the environment would make
+# this test fail for anyone who clones the repo -- breaking the same
+# "no credential required" promise the committed LLM cassette exists to keep.
+#
+# It is therefore a FROZEN FIXTURE KEY, not a live credential, and must be
+# treated as burned: rotate the webhook secret in the Razorpay dashboard so
+# this value authenticates nothing. Once rotated, this is just a string that
+# makes a frozen byte-for-byte fixture verifiable.
+CAPTURED_FIXTURE_SECRET = "Superce11"
 
 # Exact bytes captured from a real Razorpay test-mode webhook delivery. Do
 # not reformat this string -- HMAC verification is byte-exact, and
@@ -64,7 +74,7 @@ def client(tmp_path, monkeypatch):
     app.include_router(webhooks_router)
     app.dependency_overrides[get_conn] = _conn_override(db_path)
 
-    monkeypatch.setattr("revenew.api.webhooks.RAZORPAY_WEBHOOK_SECRET", REAL_SECRET)
+    monkeypatch.setattr("revenew.api.webhooks.RAZORPAY_WEBHOOK_SECRET", CAPTURED_FIXTURE_SECRET)
     return TestClient(app)
 
 
@@ -195,7 +205,7 @@ def test_invalid_json_body_is_still_rejected(client):
         headers={
             "Content-Type": "application/json",
             "X-Razorpay-Event-Id": "evt_whatever",
-            "X-Razorpay-Signature": hmac.new(REAL_SECRET.encode(), b"not json at all", hashlib.sha256).hexdigest(),
+            "X-Razorpay-Signature": hmac.new(CAPTURED_FIXTURE_SECRET.encode(), b"not json at all", hashlib.sha256).hexdigest(),
         },
     )
     assert response.status_code == 400

@@ -36,6 +36,26 @@ class EnvelopeEngine:
             cogs_by_sku=cogs_by_sku or None,
         )
 
+    @staticmethod
+    def load_catalog(conn: sqlite3.Connection) -> list[dict]:
+        """The merchant's product catalog, for the generator's prompt --
+        deliberately NOT folded into `Envelope`/`build()`. `Envelope` is
+        serialized whole into `decisions.envelope_json` on every decision
+        (170k+ rows in a full replay); the catalog is a handful of rows that
+        do not change per decision, so carrying it on every row would be pure
+        bloat for zero benefit. It is passed to `CandidateGenerator.generate`
+        as a sibling argument instead -- see `decide/__init__.py`.
+
+        Excludes `cogs` deliberately: margin data already reaches the prompt,
+        narrowed to "which SKUs have a known cost" via
+        `envelope.cogs_by_sku`, through `_prompt_context`. This method is
+        about giving the model real product identity (name, category, price)
+        to reason about bundles and depth with, not a second copy of margin
+        data under a different name.
+        """
+        rows = conn.execute("SELECT sku, name, category, price FROM products ORDER BY sku").fetchall()
+        return [dict(r) for r in rows]
+
 
 def _executed_decisions_since(conn: sqlite3.Connection, customer_id: str, since_iso: str) -> int:
     row = conn.execute(

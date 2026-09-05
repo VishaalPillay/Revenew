@@ -1,0 +1,61 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off the Classic Tee – refresh your wardrobe",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01"
+      ],
+      "rationale": "Cross‑sell apparel to dormant customers who have shown affinity for our core tees."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "Save $50 on the Hoodie – upgrade your look",
+      "discount_pct": null,
+      "discount_amount": 50.0,
+      "skus": [
+        "SKU-A03"
+      ],
+      "rationale": "Encourage higher‑priced apparel purchase while staying within the Rs 500 cap."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Classic Tee + Cap bundle – style together, save together",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Bundle complementary apparel and accessory to increase basket value for dormant shoppers."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 100 loyalty points on any purchase over Rs 2000",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Reward dormant customers for high‑ticket purchases, nudging them back into activity."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "It’s been a while – check out our new arrivals",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Re‑engage dormant shoppers with a gentle reminder of fresh inventory."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off the Backpack – carry your essentials in style",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "Cross‑sell accessories to dormant customers likely to need travel gear."
+    }
+  ]
+}

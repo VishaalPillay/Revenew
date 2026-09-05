@@ -10,8 +10,11 @@
 -- supplies all of them, none are literals here, so the same query text runs
 -- identically under the wall clock and under a virtual clock mid-replay.
 --
--- Each block must return exactly: customer_id, rupees_at_risk. detector.py
--- adds opportunity_id, opportunity_type, window_id, cohort_id, segment,
+-- Each block must return exactly: customer_id, rupees_at_risk, plus an
+-- OPTIONAL third column recommended_sku (NULL where a query has no product
+-- recommendation to make -- dormant_winback and first_order_retention leave
+-- it out entirely and detector.py fills NULL for them). detector.py adds
+-- opportunity_id, opportunity_type, window_id, cohort_id, segment,
 -- detector_query_hash, and detected_at itself -- none of that is SQL's job.
 
 -- name: dormant_winback
@@ -127,6 +130,6 @@ ranked_recommendations AS (
         WHERE cs2.customer_id = cs.customer_id AND cs2.sku = sa.sku_to
     )
 )
-SELECT customer_id, rupees_at_risk
+SELECT customer_id, rupees_at_risk, recommended_sku
 FROM ranked_recommendations
 WHERE rn = 1;

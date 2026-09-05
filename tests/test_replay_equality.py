@@ -26,16 +26,16 @@ def _make_executed_decision(conn, i: int, segment: str, family: str) -> tuple[st
     cid, oid, did = f"cus{i}", f"opp{i}", f"dec{i}"
     conn.execute("INSERT OR IGNORE INTO customers VALUES (?, ?)", (cid, iso(NOW)))
     conn.execute(
-        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?)",
-        (oid, "run1", cid, "dormant_winback", "w1", "dormant_winback", 500, "h", iso(NOW)),
+        "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (oid, "run1", cid, "dormant_winback", "w1", "dormant_winback", 500, "h", iso(NOW), None),
     )
     conn.execute(
         "INSERT INTO opportunities VALUES (?,?,?,?,?,?,?)",
         (oid, "run1", cid, "w1", segment, "treatment", iso(NOW)),
     )
     conn.execute(
-        "INSERT INTO decisions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (did, oid, "run1", segment, family, "{}", 3, 1, "{}", 0.4, "executed", None, iso(NOW)),
+        "INSERT INTO decisions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (did, oid, "run1", segment, family, "{}", 3, 1, "{}", 0.4, "executed", None, iso(NOW), "internal"),
     )
     conn.commit()
     return oid, did
@@ -102,8 +102,8 @@ def test_control_arm_outcomes_never_move_the_posteriors(seeded_conn):
         cid, oid = f"ccus{i}", f"copp{i}"
         seeded_conn.execute("INSERT OR IGNORE INTO customers VALUES (?, ?)", (cid, iso(NOW)))
         seeded_conn.execute(
-            "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?)",
-            (oid, "run1", cid, "dormant_winback", "w1", "dormant_winback", 500, "h", iso(NOW)),
+            "INSERT INTO opportunity_candidates VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (oid, "run1", cid, "dormant_winback", "w1", "dormant_winback", 500, "h", iso(NOW), None),
         )
         seeded_conn.execute(
             "INSERT INTO opportunities VALUES (?,?,?,?,?,?,?)",

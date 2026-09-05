@@ -1,0 +1,59 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off Classic Tee to complete your look",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01"
+      ],
+      "rationale": "New shoppers often look for matching accessories; a discount on Classic Tee encourages them to try our apparel line."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹50 off your next order",
+      "discount_pct": null,
+      "discount_amount": 50.0,
+      "skus": [],
+      "rationale": "A modest flat discount lowers purchase friction for first-time buyers across any product, nudging them to explore further."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle: Classic Tee + Cap, 15% off",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Bundling a top-selling tee with a popular cap offers a cohesive look at a reduced price, driving cross-category sales."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹30 loyalty credit on first order",
+      "discount_pct": null,
+      "discount_amount": 30.0,
+      "skus": [],
+      "rationale": "Rewarding new customers with loyalty credit increases perceived value and motivates repeat purchases."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Explore new arrivals",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A friendly reminder highlights fresh stock, keeping new users engaged without financial incentive."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "20% off Slim Jeans",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02"
+      ],
+      "rationale": "High-demand jeans benefit from a generous discount, enticing new customers to upgrade their wardrobe."
+    }
+  ]
+}

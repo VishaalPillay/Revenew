@@ -1,0 +1,59 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "15% off on Classic Tee – bring comfort back to your wardrobe",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01"
+      ],
+      "rationale": "Re-engage lapsing customers by offering a familiar staple at a discount, encouraging repeat purchase and restoring brand loyalty"
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹200 off your next order – make your wardrobe upgrade cheaper",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Provide a tangible savings that aligns with the segment’s risk band, nudging lapsing customers to return for a higher spend"
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Classic Tee + Cap Bundle – 15% off your pair",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Offer a complementary apparel and accessory bundle at a discount to entice lapsing customers to repurchase and upgrade their style"
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "₹300 loyalty credit – redeem on your next style upgrade",
+      "discount_pct": null,
+      "discount_amount": 300.0,
+      "skus": [],
+      "rationale": "Reward lapsing customers with immediate credit to encourage future buying, addressing the over‑Rs‑2000 risk band"
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We miss you! Check out the latest styles",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Prompt lapsing customers to revisit the store, reinforcing brand connection without cost"
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "10% off Hoodie – stay warm & save",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A03"
+      ],
+      "rationale": "Target lapsing customers with a mid‑tier apparel offering, balancing affordability and brand value to lift conversion"
+    }
+  ]
+}

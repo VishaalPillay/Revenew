@@ -31,11 +31,27 @@ dev = ["pytest>=8.0", "ruff>=0.6"]
 revenew = "revenew.cli:main"
 
 [tool.setuptools]
+# `harness` ships alongside `revenew` because the CLI's `demo` and `replay`
+# subcommands drive it, and a console-script entry point does NOT put the
+# current directory on sys.path the way `python -m` does -- without this,
+# `revenew demo` dies with ModuleNotFoundError on a machine where it was
+# installed rather than run from a checkout. This does not weaken the
+# isolation claim in db/schema.sql: that claim is that the RUNTIME decision
+# path never opens harness.db, and it still doesn't. Only the two explicitly
+# evaluation-shaped subcommands import harness, lazily, inside the function
+# body -- see revenew/cli.py.
 packages = ["revenew", "revenew.detect", "revenew.route", "revenew.decide",
-            "revenew.execute", "revenew.ledger", "revenew.measure", "revenew.api"]
+            "revenew.execute", "revenew.ledger", "revenew.measure", "revenew.api",
+            "revenew.agent", "harness"]
 
 [tool.setuptools.package-data]
-revenew = ["*.sql", "detect/*.sql", "api/templates/*.html"]
+# `api/static/**` is the built React console (source in frontend/). It is
+# committed and packaged for the same reason the LLM cassettes are: the
+# README promises that a clone runs with pip alone, and requiring a node
+# toolchain to see the dashboard would break that promise for anyone
+# evaluating this project.
+revenew = ["*.sql", "detect/*.sql", "decide/*.sql", "api/templates/*.html",
+           "api/static/*", "api/static/assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

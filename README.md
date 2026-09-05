@@ -47,6 +47,11 @@ Revenew closes that loop, and does it inside constraints that make the closure m
 | **Decision traces** | Envelope, raw candidates, per-candidate validator verdicts, posterior samples, chosen propensity — every decision, end to end |
 | **Explicit failure handling** | Eleven named failure modes with defined responses; the no-action reason distribution is a queryable view |
 | **Double-entry budget ledger** | Reserve on decision, commit on execution, release on failure. A crash holds budget rather than losing it |
+| **Reproducible LLM** | Candidates are generated per *cohort*, not per customer — ~55k decisions collapse to 16 real API calls — and recorded to a committed cassette, so a system with a live model in it still replays byte-identically with no credential |
+| **Closed execution loop** | Decisions persist as `pending`, reserve budget, execute against Razorpay with an idempotency key, then flip to `executed`. A reconciler sweeps anything a crash left behind — releasing the hold, or fixing it forward if the offer really was sent |
+| **Verified webhook signatures** | HMAC-SHA256 over the raw body, constant-time compared, checked against a *real captured delivery* rather than a guessed scheme — which is how we found we'd been rejecting every real webhook Razorpay ever sent |
+| **Read API + operator CLI** | `/health`, `/api/report`, `/api/decisions/{id}` (full trace), `/api/posteriors`, `/api/regret`, `/api/theatre`; and `revenew demo/report/trace/posteriors/reconcile/serve` — the console, the API, and the CLI all call the same functions |
+| **Replayable console** | The run as a watchable timeline: belief state per day rebuilt from the reward ledger, a ticker of the offers actually sent, and a scrub bar. The animation is a client walking real frames — the server invents nothing |
 
 ## Architecture
 
@@ -80,7 +85,8 @@ Ground truth reaches the regret calculation without ever touching the runtime. E
 | LLM | Groq (`openai/gpt-oss-20b`), one call per cohort | Candidate composition only. Originally Claude; switched when no Anthropic billing was available -- see `SYSTEM_DESIGN.md` |
 | Sampling | Seeded `numpy.random.Generator` | A seeded RNG is what makes replay exact |
 | Statistics | SciPy | Welch intervals on the reported lift |
-| Dashboard | Jinja2 + Chart.js | No separate frontend build |
+| Console | React + Vite, hand-rolled SVG charts | Four routes over the read API. Built output is committed, so `pip install` alone still serves it |
+| Fallback dashboard | Jinja2 + Chart.js | The original server-rendered page, kept at `/classic` — zero JS in the path if the build is ever missing |
 | Testing | pytest | Replay equality, envelope invariant, budget conservation |
 
 ### Deliberately not used

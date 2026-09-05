@@ -2,8 +2,9 @@
 
 One call per simulated day: detect -> arbitrate -> assign arms -> decide
 every treatment opportunity -> resolve whatever outcome windows have closed.
-The SAME `decide_one_opportunity` the live webhook path would call is used
-here -- there is one decision path, exercised under two different clocks.
+This is `decide_one_opportunity`'s only real caller today outside tests --
+see that function's own docstring in `revenew/decide/__init__.py` for what
+"live" currently means and what it does not yet mean.
 
 Nothing in this module ever imports `TRUTH` or `BASELINE` directly; it holds
 one `OutcomeOracle` and calls `.resolve()` on it, exactly as a live merchant's
@@ -90,6 +91,7 @@ def run_replay(
     llm_mode: str = "off",
     cassette_dir: str | None = None,
     strict_replay: bool = False,
+    strategy: str = "thompson",
 ) -> ReplayResult:
     t0 = time.perf_counter()
     if policy is None:
@@ -99,9 +101,21 @@ def run_replay(
         # following day ran almost entirely `budget_exhausted`, which
         # demonstrates the failure path (already covered by
         # test_budget_conservation.py) instead of the learning behaviour a
-        # 30-day replay exists to show. Scaling the cap to the population
-        # keeps budget from being the accidental bottleneck.
-        policy = PolicyConfig(budget_cap=max(200_000.0, n_customers * 200.0))
+        # replay exists to show.
+        #
+        # The `* months` term is the second half of that same lesson, and it
+        # cost a full 90-day run to learn: scaling only by population made the
+        # cap a 30-day figure, so a 90-day run spent all 600,000 of it and
+        # finished with THREE RUPEES left. From that point on, every candidate
+        # that costs money failed the budget check, only the zero-cost ones
+        # survived validation, and the bandit's choice collapsed to whatever
+        # was free. It looked like the bandit un-learning -- the truth-optimal
+        # action was picked 25% of the time mid-run and then exactly 0% for
+        # the last 2,383 decisions -- when in fact it was never being offered
+        # a paid option to pick. A budget that runs out mid-experiment doesn't
+        # just cap spend, it silently changes what is being measured.
+        months = max(n_days / 30.0, 1.0)
+        policy = PolicyConfig(budget_cap=max(200_000.0, n_customers * 200.0 * months))
     # Purely a function of `seed` -- no uuid4 suffix. A random suffix would
     # flow into opportunity_id (content-addressed from run_id, see
     # detect/detector.py) and from there into the bandit's RNG seed for every
@@ -168,6 +182,7 @@ def run_replay(
                 generator=generator,
                 bandit_seed=_stable_seed(run_id, opp.opportunity_id),
                 now=now,
+                strategy=strategy,
             )
             if decision.status == DecisionStatus.EXECUTED:
                 result.decisions_executed += 1
@@ -241,6 +256,7 @@ def run_and_report(
     llm_mode: str = "off",
     cassette_dir: str | None = None,
     strict_replay: bool = False,
+    strategy: str = "thompson",
     export: bool = True,
 ) -> ReplayResult:
     """`run_replay()` plus the summary printout and regret export -- the
@@ -249,13 +265,19 @@ def run_and_report(
     second copy of the same nine print statements that could drift from what
     running this module directly prints.
     """
-    from harness.regret import compute_decision_regret, export_to_runtime, posterior_recovery_error
+    from harness.regret import (
+        compute_decision_regret,
+        export_to_runtime,
+        learning_curve,
+        posterior_recovery_error,
+    )
     from revenew.db import connect as rconnect
 
     r = run_replay(
         seed=seed, n_customers=n_customers, n_days=n_days,
         revenew_db_path=revenew_db_path, harness_db_path=harness_db_path, quiet=False,
         llm_mode=llm_mode, cassette_dir=cassette_dir, strict_replay=strict_replay,
+        strategy=strategy,
     )
     print()
     print(f"run_id: {r.run_id}")
@@ -273,10 +295,21 @@ def run_and_report(
         conn = rconnect(revenew_db_path)
         regrets = compute_decision_regret(conn)
         recovery = posterior_recovery_error(conn)
-        export_to_runtime(conn, run_id=r.run_id, regrets=regrets, recovery=recovery)
+        learning = learning_curve(conn)
+        export_to_runtime(
+            conn, run_id=r.run_id, regrets=regrets, recovery=recovery, learning=learning
+        )
         conn.close()
         final_regret = regrets and sum(x.regret for x in regrets)
         print(f"regret curve exported: {len(regrets)} decisions, final cumulative regret {final_regret:.1f}" if regrets else "no decisions to export")
+        if learning:
+            print(
+                f"learning curve: picked the truth-optimal action "
+                f"{learning[0]['optimal_rate']:.1%} of the time in the first slice, "
+                f"{learning[-1]['optimal_rate']:.1%} in the last "
+                f"(regret/decision {learning[0]['regret_per_decision']:.0f} -> "
+                f"{learning[-1]['regret_per_decision']:.0f})"
+            )
 
     return r
 
@@ -292,12 +325,14 @@ if __name__ == "__main__":
     p.add_argument("--harness-db", default="harness.db")
     p.add_argument("--no-export", action="store_true", help="skip writing the regret curve into revenew.db")
     p.add_argument(
-        "--llm", choices=["off", "record", "replay"], default="off",
+        "--llm", choices=["off", "record", "replay", "shelf"], default="off",
         help="off (default): templated fallback only, matches every prior run. "
              "record: fill cassette misses with real API calls, keyed by cohort "
              "(opportunity_type, segment, rupees band, envelope fingerprint) -- "
              "~dozens of calls, not one per decision. replay: cassette only, "
-             "never touches the API -- what a judge with no credential runs.",
+             "never touches the API -- what a judge with no credential runs. "
+             "shelf: a fixed five-family template shelf, no LLM call at all -- "
+             "PLAN.md section 5's Arm B (see decide/shelf.py).",
     )
     p.add_argument(
         "--cassette-dir", default=None,
@@ -307,11 +342,16 @@ if __name__ == "__main__":
         "--strict-replay", action="store_true",
         help="with --llm replay, raise on a cassette miss instead of falling back to a template",
     )
+    p.add_argument(
+        "--strategy", choices=["thompson", "greedy"], default="thompson",
+        help="bandit scoring rule: thompson (default, explores) or greedy (posterior mean, "
+             "a constant policy) -- see decide/bandit.py's BanditScorer.choose().",
+    )
     args = p.parse_args()
 
     run_and_report(
         seed=args.seed, n_customers=args.customers, n_days=args.days,
         revenew_db_path=args.revenew_db, harness_db_path=args.harness_db,
         llm_mode=args.llm, cassette_dir=args.cassette_dir, strict_replay=args.strict_replay,
-        export=not args.no_export,
+        strategy=args.strategy, export=not args.no_export,
     )

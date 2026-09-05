@@ -28,8 +28,8 @@ def persist_decision(conn: sqlite3.Connection, decision: Decision) -> None:
         INSERT INTO decisions
             (decision_id, opportunity_id, run_id, segment, action_family, envelope_json,
              candidates_generated, candidates_valid, chosen_candidate_json, propensity,
-             status, no_action_reason, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             status, no_action_reason, created_at, channel)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             decision.decision_id,
@@ -45,6 +45,7 @@ def persist_decision(conn: sqlite3.Connection, decision: Decision) -> None:
             decision.status.value,
             decision.no_action_reason.value if decision.no_action_reason else None,
             iso(decision.created_at),
+            decision.channel,
         ),
     )
     conn.executemany(

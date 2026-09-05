@@ -1,0 +1,63 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 10% on your Classic Tee",
+      "discount_pct": 0.1,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01"
+      ],
+      "rationale": "Cross‑sell affinity shows apparel buyers often add tees; a 10% discount encourages conversion."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 15% on the Hoodie",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A03"
+      ],
+      "rationale": "Hoodie purchasers tend to buy additional apparel; a 15% discount drives higher basket size."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹200 off Backpack",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "Accessory shoppers frequently add backpacks; a flat Rs.200 off nudges purchase."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹500 off Runner Low",
+      "discount_pct": null,
+      "discount_amount": 500.0,
+      "skus": [
+        "SKU-F01"
+      ],
+      "rationale": "Footwear buyers often upgrade to running shoes; a Rs.500 coupon maximizes cross‑sell."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Classic Tee + Socks bundle",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C03"
+      ],
+      "rationale": "Bundling a tee with socks taps apparel‑accessory affinity, boosting overall spend."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "Check out our new styles!",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Remind active shoppers to explore new arrivals, reinforcing cross‑sell interest."
+    }
+  ]
+}

@@ -36,15 +36,25 @@ the off/record/replay modes, the typed-exception split between "loud" and
 "degrade" -- is provider-agnostic by construction; the swap from Anthropic
 to Groq touched only this module's `_client()`/`_call()` and its exception
 types.
+
+**A fourth mode, `"shelf"`, makes no LLM call at all** -- it delegates to
+`decide.shelf.ShelfGenerator`, which lives in its OWN module precisely so
+this docstring's "the only LLM call in the system" claim stays true even
+with a fourth generation mode. It exists for PLAN.md section 5's Arm B: a
+fixed, five-family template shelf that gives the bandit a real multi-family
+menu to Thompson-sample over WITHOUT an LLM in the loop, isolating what
+*learning* adds (Arm A -> B) from what the *LLM* adds (Arm B -> C).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sqlite3
 
 from revenew.decide.bandit import PosteriorStore
 from revenew.decide.cassette import Cassette, cache_key, rupees_band
+from revenew.decide.shelf import ShelfGenerator
 from revenew.models import (
     ActionFamily,
     Candidate,
@@ -88,8 +98,9 @@ CANDIDATE_SET_SCHEMA = _require_every_property(CandidateSet.model_json_schema())
 SYSTEM_PROMPT = """You are composing commercial offers for an e-commerce merchant.
 
 You will be given: an opportunity (why this cohort of customers is worth
-acting on), a constraint envelope (hard caps you must not exceed), and the
-customer segment. Propose 5 to 8 CANDIDATE offers. Each must:
+acting on), a constraint envelope (hard caps you must not exceed), the
+customer segment, and the merchant's product catalog. Propose 5 to 8
+CANDIDATE offers. Each must:
 
 - pick exactly one action_family from the allowed list
 - stay within max_discount_pct and max_absolute_discount from the envelope
@@ -97,12 +108,18 @@ customer segment. Propose 5 to 8 CANDIDATE offers. Each must:
 - carry a short, specific headline and a one-sentence rationale grounded in
   the opportunity you were given -- not a generic marketing line
 
+If you propose a BUNDLE_OFFER, name real products from the given catalog in
+`skus` (by their SKU code) -- pick items that plausibly complement each
+other (same or adjacent category is a reasonable signal), not an arbitrary
+pair. Do not invent a SKU that is not in the catalog you were given.
+
 Vary the candidates: different families, different depths, at least one
 REMINDER_NUDGE (zero cost) among them. You are proposing options for a
 downstream ranking system to choose between, not picking the single best one
 yourself. These candidates will be reused across every customer in this
-cohort, not just one -- do not reference any one customer's specific name or
-order history, only the cohort-level facts given to you.
+cohort, not just one -- do not reference any one customer's specific name,
+order history, or which product THEY specifically own; reason only from the
+cohort-level facts and the catalog you were given.
 
 Respond with a JSON object matching the required schema exactly -- no prose,
 no markdown fencing, just the JSON object.
@@ -121,6 +138,7 @@ def _prompt_context(
     rupees_band_label: str,
     rupees_band_value: float,
     envelope: Envelope,
+    catalog: list[dict],
 ) -> str:
     """Built from the COHORT, not one customer -- deliberately no exact
     rupees_at_risk and no budget_remaining. Both change on every decision;
@@ -128,6 +146,16 @@ def _prompt_context(
     different prompts (and therefore different cache keys in all but name),
     which defeats cohort-level generation. See cassette.py's
     envelope_fingerprint for the same exclusion, applied to the cache key.
+
+    `catalog` is the full merchant catalog (name/category/price per SKU),
+    not any one customer's `recommended_sku` -- that field is per-customer
+    (detect/queries.sql's cross-sell CTE ranks one best pairing per
+    customer's own basket) and injecting it here would fragment the cache
+    back toward one entry per customer, the same mistake `rupees_at_risk`
+    and `budget_remaining` are already excluded to avoid. Giving the model
+    the whole catalog instead lets it reason about plausible bundles at the
+    cohort level using only information every customer in the cohort shares
+    -- real product identity, not one query's specific recommendation.
     """
     return json.dumps(
         {
@@ -141,6 +169,10 @@ def _prompt_context(
                 "excluded_skus": envelope.excluded_skus,
                 "cogs_known_for_skus": sorted(envelope.cogs_by_sku or {}),
             },
+            "catalog": [
+                {"sku": item["sku"], "name": item["name"], "category": item["category"], "price": item["price"]}
+                for item in catalog
+            ],
             "allowed_action_families": [f.value for f in ActionFamily],
         },
         indent=2,
@@ -168,17 +200,19 @@ class CandidateGenerator:
         mode: str = "off",
         cassette: Cassette | None = None,
         strict_replay: bool = False,
+        shelf: ShelfGenerator | None = None,
     ) -> None:
-        if mode not in ("off", "record", "replay"):
-            raise ValueError(f"mode must be 'off', 'record', or 'replay', got {mode!r}")
+        if mode not in ("off", "record", "replay", "shelf"):
+            raise ValueError(f"mode must be 'off', 'record', 'replay', or 'shelf', got {mode!r}")
         self.mode = mode
-        self.cassette = cassette if cassette is not None else (Cassette() if mode != "off" else None)
+        self.cassette = cassette if cassette is not None else (Cassette() if mode in ("record", "replay") else None)
         self.strict_replay = strict_replay
-        # In "off" mode this stays None even if a credential is present --
-        # the default must never make a live call just because GROQ_API_KEY
+        self.shelf = shelf if shelf is not None else (ShelfGenerator() if mode == "shelf" else None)
+        # In "off"/"shelf" this stays None even if a credential is present --
+        # neither mode may ever make a live call just because GROQ_API_KEY
         # happens to be set in the environment. Only "record"/"replay" resolve
         # a client (and even "replay" never actually calls it -- see generate()).
-        self.client = None if mode == "off" else (client if client is not None else _client())
+        self.client = None if mode in ("off", "shelf") else (client if client is not None else _client())
 
     @property
     def llm_available(self) -> bool:
@@ -193,11 +227,21 @@ class CandidateGenerator:
         envelope: Envelope,
         store: PosteriorStore,
         policy: PolicyConfig,
+        catalog: list[dict],
+        conn: sqlite3.Connection | None = None,
     ) -> CandidateSet | None:
         if self.mode == "off":
             return _template_fallback(segment, envelope, policy, store)
 
-        key = cache_key(opportunity_type, segment, rupees_at_risk, envelope)
+        if self.mode == "shelf":
+            if conn is None:
+                raise ValueError("mode='shelf' requires generate(conn=...) -- see decide/shelf.py")
+            return self.shelf.build(
+                conn, opportunity_type=opportunity_type, segment=segment,
+                rupees_at_risk=rupees_at_risk, envelope=envelope, catalog=catalog,
+            )
+
+        key = cache_key(opportunity_type, segment, rupees_at_risk, envelope, catalog)
 
         if self.mode == "replay":
             cached = self.cassette.get(key)
@@ -226,7 +270,7 @@ class CandidateGenerator:
         import groq  # local: keeps `groq` optional for off/replay-only callers
 
         band_label, band_value = rupees_band(rupees_at_risk)
-        context = _prompt_context(opportunity_type, segment, band_label, band_value, envelope)
+        context = _prompt_context(opportunity_type, segment, band_label, band_value, envelope, catalog)
         try:
             raw = self._call(context, retry_hint=None)
         except (groq.AuthenticationError, groq.PermissionDeniedError):

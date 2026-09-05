@@ -1,0 +1,67 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Refresh Your Look—20% Off Classic Tee",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01"
+      ],
+      "rationale": "Dormant customers over Rs2000—give them a price incentive to return."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹100 Off Your Next Order Over Rs2000",
+      "discount_pct": null,
+      "discount_amount": 100.0,
+      "skus": [],
+      "rationale": "Targeting dormant shoppers with high spend risk, a modest coupon nudges them back."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Pack & Play Bundle – Slim Jeans + Backpack",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02",
+        "SKU-C02"
+      ],
+      "rationale": "Complementary items create a compelling offer for dormant customers with high risk, encouraging multi-item purchase."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn 50 Loyalty Points on Your Return",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Re-engage dormant shoppers by rewarding their return and building long-term value."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "We Miss You—Your Favorites Await",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "A simple reminder helps re-engage dormant customers without additional spend."
+    },
+    {
+      "action_family": "percent_discount",
+      "headline": "Cozy Up—15% Off Hoodie",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A03"
+      ],
+      "rationale": "Give a moderate discount to dormant shoppers at high spend risk, prompting a purchase."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹150 Off on Orders Over Rs3000",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [],
+      "rationale": "Encourage large purchases from dormant high-value customers."
+    }
+  ]
+}

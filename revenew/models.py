@@ -233,6 +233,7 @@ class Decision(BaseModel):
     status: DecisionStatus
     no_action_reason: NoActionReason | None = None
     created_at: datetime
+    channel: str = "internal"
 
     @property
     def candidates_generated(self) -> int:
@@ -288,8 +289,14 @@ class OfferSpec(BaseModel):
     known. Earlier, LiveAdapter.create_offer hardcoded this to 0 with no
     caller ever supplying a real figure; carrying it on the spec itself is
     what makes that fixable without LiveAdapter having to look anything up.
+
+    `decision_id` exists so `LiveAdapter.create_offer` can carry it in the
+    payment link's `notes` -- without it, a webhook delivery reporting that
+    payment has no way to map back to the decision that produced it, and the
+    outcome (and the bandit update it feeds) can never be recorded.
     """
 
+    decision_id: str
     customer_id: str
     action_family: ActionFamily
     headline: str

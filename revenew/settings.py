@@ -48,6 +48,28 @@ GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
 RAZORPAY_WEBHOOK_SECRET_PLACEHOLDER = "your_webhook_secret_here"
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 
+# Test-mode credentials for `execute/razorpay.py`'s `build_adapter()`. Reading
+# them here, rather than in that module directly, keeps every env var this
+# project touches resolved in exactly one place -- the same reason
+# GROQ_MODEL and RAZORPAY_WEBHOOK_SECRET are read here and not where they're
+# used. Neither is validated against a placeholder string the way the
+# webhook secret is: .env.example's `rzp_test_your_key_id_here` /
+# `your_key_secret_here` will simply fail against the real API rather than
+# needing a second sentinel to detect, and `build_adapter()` only checks that
+# something non-empty is present, not that it is well-formed.
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+
+# The execution-mode switch that, before this existed, did not exist anywhere
+# in the codebase: `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` used to be read by
+# zero files under `revenew/`, and `LiveAdapter` was constructed only in
+# tests. Default "fixture" so every existing caller (every test, every
+# replay run, anyone who clones this repo with no Razorpay account at all)
+# keeps behaving exactly as before unless this is explicitly set to "live" --
+# see `execute/razorpay.py`'s `build_adapter()`, which additionally refuses
+# to honor "live" at all unless both credentials are actually present.
+REVENEW_EXECUTION_MODE = os.environ.get("REVENEW_EXECUTION_MODE", "fixture")
+
 
 @dataclass(frozen=True)
 class PolicyConfig:

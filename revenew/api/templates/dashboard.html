@@ -27,6 +27,24 @@
   canvas { max-height: 260px; }
   .anti-metric { font-size: 12px; color: #a66; border-top: 1px dashed #ddd; margin-top: 12px; padding-top: 10px; }
   .empty { color: #999; font-style: italic; font-size: 13px; }
+
+  /* --- decision trace panel: the only place the AI is actually visible --- */
+  .trace-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+  .pill { background: #eef1f5; color: #445; border-radius: 10px; padding: 2px 9px;
+          font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+  .trace-head .ci { flex-basis: 100%; margin-top: 4px; }
+  .envelope-strip { background: #fbfbf9; border: 1px solid #eee; border-left: 3px solid #bbb;
+                    padding: 8px 12px; font-size: 12px; color: #555; margin-bottom: 12px; }
+  .trace-table td { vertical-align: top; }
+  .cand-valid td { background: #f7fcf8; }
+  .cand-invalid td { background: #fdf7f7; color: #977; }
+  .chosen-mark { color: #d19a00; font-size: 15px; }
+  .depth { background: #eee; border-radius: 3px; padding: 1px 5px; font-size: 11px;
+           margin-left: 6px; color: #555; }
+  .ok { color: #1a7f37; font-weight: 600; font-size: 12px; }
+  .bad { color: #b44; font-size: 12px; }
+  .trace-foot { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #ddd;
+                font-size: 13px; color: #333; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -55,10 +73,22 @@
   </div>
 
   <div class="card">
-    <h2>Candidate validity</h2>
-    {% if candidate_validity.validity_rate is not none %}
-    <div class="stat neutral">{{ "%.0f"|format(candidate_validity.validity_rate * 100) }}%</div>
-    <div class="ci">{{ candidate_validity.total_valid }} / {{ candidate_validity.total_generated }} candidates stayed inside the envelope unassisted</div>
+    <h2>LLM policy compliance</h2>
+    {% if candidate_validity.policy_compliance_rate is not none %}
+    <div class="stat {{ 'positive' if candidate_validity.policy_violations == 0 else 'negative' }}">
+      {{ "%.2f"|format(candidate_validity.policy_compliance_rate * 100) }}%
+    </div>
+    <div class="ci">
+      {{ "{:,}".format(candidate_validity.policy_violations) }} illegal offers proposed out of
+      {{ "{:,}".format(candidate_validity.total_generated) }} candidates &mdash; the envelope is
+      enforced twice, so a model error can only ever be a suboptimal <em>legal</em> action.
+    </div>
+    <div class="anti-metric">
+      A further {{ "{:,}".format(candidate_validity.eligibility_blocked) }} candidates were dropped
+      because the <em>customer</em> was ineligible (cooldown / monthly cap), not because anything was
+      wrong with the offer. That is a merchant policy setting, not a model failure &mdash; counting
+      it against the LLM is what made an earlier version of this panel read 3%.
+    </div>
     {% else %}
     <div class="empty">No decisions yet.</div>
     {% endif %}
@@ -75,9 +105,86 @@
 <div class="grid">
 
   <div class="card" style="grid-column: 1 / -1;">
+    <h2>One decision, end to end</h2>
+    {% if trace %}
+    <div class="trace-head">
+      <span class="pill">{{ trace.segment }}</span>
+      <span class="pill">{{ trace.opportunity_id[:16] }}…</span>
+      <span class="pill">customer {{ trace.customer_id }}</span>
+      <span class="pill">{{ trace.window_id }}</span>
+      <span class="ci">
+        {{ trace.candidates|length }} candidates composed by <code>{{ llm_model }}</code>,
+        recorded once and replayed byte-identically &mdash; no API key needed to reproduce this page.
+      </span>
+    </div>
+
+    <div class="envelope-strip">
+      <strong>Envelope the model was bound by:</strong>
+      max {{ "%.0f"|format(trace.envelope.max_discount_pct * 100) }}% ·
+      max Rs {{ "%.0f"|format(trace.envelope.max_absolute_discount) }} ·
+      cooldown {{ trace.envelope.cooldown_days }}d ·
+      {{ trace.envelope.max_offers_per_customer_per_month }}/month ·
+      budget Rs {{ "{:,.0f}".format(trace.envelope.budget_remaining) }}
+    </div>
+
+    <table class="trace-table">
+      <tr><th></th><th>Family</th><th>Offer the model proposed</th><th>Verdict</th></tr>
+      {% for c in trace.candidates %}
+      <tr class="{{ 'cand-valid' if c.valid else 'cand-invalid' }}">
+        <td>
+          {# By index, resolved server-side -- comparing headlines starred
+             every candidate that shared one, including rejected ones. #}
+          {% if trace.chosen_candidate_index == c.candidate_index %}
+            <span class="chosen-mark" title="chosen by the bandit">★</span>
+          {% endif %}
+        </td>
+        <td><code>{{ c.candidate.action_family }}</code></td>
+        <td>
+          {{ c.candidate.headline }}
+          {% if c.candidate.discount_pct %}<span class="depth">{{ "%.0f"|format(c.candidate.discount_pct * 100) }}%</span>{% endif %}
+          {% if c.candidate.discount_amount %}<span class="depth">Rs {{ "%.0f"|format(c.candidate.discount_amount) }}</span>{% endif %}
+        </td>
+        <td>
+          {% if c.valid %}<span class="ok">legal</span>
+          {% else %}<span class="bad">dropped: {{ c.violations|join(', ') }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    {% if trace.chosen_candidate %}
+    <div class="trace-foot">
+      <strong>★ Bandit chose</strong> <code>{{ trace.action_family }}</code> &mdash;
+      &ldquo;{{ trace.chosen_candidate.headline }}&rdquo; at propensity
+      <strong>{{ "%.3f"|format(trace.propensity) }}</strong>.
+      Thompson sampling over the surviving families, not a fixed rule &mdash; the propensity is
+      the probability this arm wins a draw, logged so an off-policy estimator can reuse this
+      decision later.
+      {% if trace.outcome %}
+      Window closed {{ "converted, Rs %.0f"|format(trace.outcome.net_revenue) if trace.outcome.converted else "with no conversion" }}.
+      {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty">No executed decision to trace yet &mdash; run <code>revenew demo</code>.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+<div class="grid">
+
+  <div class="card" style="grid-column: 1 / -1;">
     <h2>Cumulative regret vs. oracle</h2>
     {% if regret_curve %}
     <canvas id="regretChart"></canvas>
+    <div class="anti-metric" style="border-top:none; color:#666;">
+      Solid line: the {{ "{:,}".format(regret_curve|length) }}-point curve over decisions the
+      <strong>bandit actually chose</strong> &mdash; a flattening slope is the learning.
+      Dashed: every decision including the ones the envelope forced to <code>no_action</code>
+      before the bandit was ever consulted. Those aren't choices, so averaging them in measures
+      cooldown policy, not learning. Graded against an oracle in a database this process cannot open.
+    </div>
     {% else %}
     <div class="empty">No exported regret curve. A learning bandit's curve should visibly flatten as posteriors sharpen.</div>
     {% endif %}
@@ -118,6 +225,36 @@
   </div>
 
   <div class="card">
+    <h2>Did it learn?</h2>
+    {% if learning_curve %}
+    <div class="stat {{ 'positive' if learning_curve[-1].optimal_rate > learning_curve[0].optimal_rate else 'neutral' }}">
+      {{ "%.0f"|format(learning_curve[0].optimal_rate * 100) }}% &rarr; {{ "%.0f"|format(learning_curve[-1].optimal_rate * 100) }}%
+    </div>
+    <div class="ci">
+      share of decisions landing on the <strong>truth-optimal</strong> action, first slice vs last.
+      Chance is 20% across five families.
+    </div>
+    <table style="margin-top:10px;">
+      <tr><th>after</th><th>n</th><th>optimal</th><th>regret / decision</th></tr>
+      {% for b in learning_curve %}
+      <tr>
+        <td>{{ b.decision_index }}</td>
+        <td>{{ b.n }}</td>
+        <td class="{{ 'sig' if b.optimal_rate > 0.2 else 'not-sig' }}">{{ "%.0f"|format(b.optimal_rate * 100) }}%</td>
+        <td>{{ "%.0f"|format(b.regret_per_decision) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="anti-metric">
+      Graded against response rates declared in a database this process cannot open. The bandit is
+      never told which action is best &mdash; it only ever sees whether a customer converted.
+    </div>
+    {% else %}
+    <div class="empty">No exported learning curve.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
     <h2>Posterior recovery</h2>
     {% if posterior_recovery %}
     <table>
@@ -142,25 +279,40 @@
 
 {% if regret_curve %}
 <script>
-  const points = {{ regret_curve | tojson }};
+  const banditPoints = {{ regret_curve | tojson }};
+  const allPoints = {{ regret_curve_all | tojson }};
+  // Both series are plotted against their own decision counter, so they are
+  // deliberately NOT on a shared x-axis of the same length -- the bandit made
+  // far fewer decisions than the system evaluated. Chart.js is given {x, y}
+  // pairs rather than a labels array so each line keeps its own scale.
   new Chart(document.getElementById('regretChart'), {
     type: 'line',
     data: {
-      labels: points.map(p => p.decision_index),
-      datasets: [{
-        label: 'Cumulative regret',
-        data: points.map(p => p.cumulative_regret),
-        borderColor: '#c22',
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.1,
-      }],
+      datasets: [
+        {
+          label: 'Bandit decisions (the learning curve)',
+          data: banditPoints.map(p => ({ x: p.decision_index, y: p.cumulative_regret })),
+          borderColor: '#c22',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.1,
+        },
+        {
+          label: 'All decisions (incl. envelope-forced no_action)',
+          data: allPoints.map(p => ({ x: p.decision_index, y: p.cumulative_regret })),
+          borderColor: '#999',
+          borderWidth: 1,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          tension: 0.1,
+        },
+      ],
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: true, labels: { boxWidth: 12, font: { size: 11 } } } },
       scales: {
-        x: { title: { display: true, text: 'decision #' } },
+        x: { type: 'linear', title: { display: true, text: 'decision #' } },
         y: { title: { display: true, text: 'cumulative regret (Rs)' } },
       },
     },

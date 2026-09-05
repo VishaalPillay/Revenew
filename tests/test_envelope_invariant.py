@@ -83,14 +83,14 @@ def test_cooldown_blocks_a_second_offer_within_the_window(seeded_conn):
     fine = Candidate(action_family=ActionFamily.PERCENT_DISCOUNT, headline="5% off", discount_pct=0.05, rationale="r")
 
     seeded_conn.execute(
-        "INSERT INTO opportunity_candidates VALUES ('opp1','run1','cus1','dormant_winback','w1','dormant_winback',500,'h',?)",
+        "INSERT INTO opportunity_candidates VALUES ('opp1','run1','cus1','dormant_winback','w1','dormant_winback',500,'h',?,NULL)",
         (iso(NOW),),
     )
     seeded_conn.execute(
         "INSERT INTO opportunities VALUES ('opp1','run1','cus1','w1','dormant','treatment',?)", (iso(NOW),)
     )
     seeded_conn.execute(
-        "INSERT INTO decisions VALUES ('dec1','opp1','run1','dormant','percent_discount','{}',1,1,'{}',0.5,'executed',NULL,?)",
+        "INSERT INTO decisions VALUES ('dec1','opp1','run1','dormant','percent_discount','{}',1,1,'{}',0.5,'executed',NULL,?,'internal')",
         (iso(NOW),),
     )
     seeded_conn.commit()

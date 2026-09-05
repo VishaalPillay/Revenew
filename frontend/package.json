@@ -1,0 +1,20 @@
+{
+  "name": "revenew-console",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Revenew merchant console. Built output is committed to revenew/api/static so a clone runs with pip alone.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 15% on Slim Jeans – Upgrade your style",
+      "discount_pct": 0.15,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A02"
+      ],
+      "rationale": "Cross-sell denim to customers who have purchased apparel to increase basket value."
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹250 off on your next footwear purchase",
+      "discount_pct": null,
+      "discount_amount": 250.0,
+      "skus": [],
+      "rationale": "Encourage footwear purchase after apparel cross-sell, boosting revenue."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Classic Tee + Cap bundle – 20% off the pair",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Combine apparel and accessory to create an appealing bundle for lapsing customers."
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹100 Loyalty Credit on your next purchase",
+      "discount_pct": null,
+      "discount_amount": 100.0,
+      "skus": [],
+      "rationale": "Reward loyalty while nudging cross-sell of complementary items."
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "You’ve got a great look – try a new accessory!",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Subtle reminder to add accessories, leveraging cross-sell affinity."
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Hoodie + Socks 3pk bundle – save ₹150",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [
+        "SKU-A03",
+        "SKU-C03"
+      ],
+      "rationale": "Pair warm apparel with matching socks to entice a bundled purchase."
+    }
+  ]
+}

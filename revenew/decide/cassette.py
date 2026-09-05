@@ -41,11 +41,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from revenew.models import CandidateSet, Envelope, OpportunityType, Segment
 
 DEFAULT_CASSETTE_DIR = Path(__file__).resolve().parent.parent.parent / "cassettes" / "candidates"
+
+# Bump whenever the PROMPT TEXT itself changes shape (a new field added to
+# `_prompt_context`, the system prompt's instructions rewritten, and so on)
+# in a way that is not already covered by `envelope_fingerprint` or
+# `catalog_fingerprint` below. A cassette recorded against an older prompt
+# answers a question the current prompt no longer asks -- replaying it as if
+# it still applies is exactly the silent-degradation failure class
+# ENGINEERING_LOG.md #11 and #13 both describe. Folded into every cache key
+# unconditionally, so bumping this is the deliberate, visible way to force a
+# full re-record; forgetting to bump it when it matters is the accident this
+# constant exists to make rare, not the accident it can prevent by itself.
+#
+# History: 1 -- original prompt, no catalog. 2 -- `_prompt_context` gained a
+# `catalog` field (see `catalog_fingerprint`); bumped alongside it because
+# the catalog fingerprint alone only protects against catalog *content*
+# changing, not against the prompt learning to use that content differently.
+PROMPT_VERSION = 2
 
 # Coarse rupees_at_risk buckets, with round boundaries rather than ones
 # derived from any one fixture's product catalog -- the cache key has to stay
@@ -72,21 +90,72 @@ def rupees_band(rupees_at_risk: float) -> tuple[str, float]:
 
 def envelope_fingerprint(envelope: Envelope) -> str:
     """Hash of the COMPOSITION inputs only -- the fields that actually change
-    what offer the model should compose. Deliberately EXCLUDES
-    `budget_remaining`: budget is a validity gate `EnvelopeValidator` applies
-    to each candidate downstream, not an input to what an offer should look
-    like, and it moves on every single decision as the ledger is spent down --
-    keying on it would refragment the cache back to one entry per decision,
-    which defeats the entire point of cohort-level generation.
+    what offer the model should compose.
+
+    Everything excluded here is excluded for the same reason: it governs
+    whether an offer may be *sent*, not what a good offer *is*.
+
+      `budget_remaining`     a validity gate `EnvelopeValidator` applies
+                             downstream, and it moves on every single decision
+                             as the ledger is spent down -- keying on it would
+                             refragment the cache back to one entry per
+                             decision, defeating cohort-level generation
+                             entirely.
+
+      `cooldown_days`,       pure ELIGIBILITY rules: they decide whether this
+      `max_offers_per_       customer may receive anything at all right now,
+       customer_per_month`   and have no bearing whatsoever on what the model
+                             should propose. Keying on them meant that merely
+                             tuning a merchant's contact policy silently
+                             invalidated every recorded cohort, and -- because
+                             a non-strict replay falls back to a templated
+                             single candidate on a miss -- quietly reverted the
+                             whole system to the one-candidate greedy argmax
+                             that ENGINEERING_LOG.md #11 exists to describe.
+                             Found exactly that way: a policy-tuning experiment
+                             produced 55,535 decisions with one candidate each
+                             and propensity 1.0 on every one.
+
+    The lesson generalises past this function: composition inputs and
+    eligibility gates are different things, and conflating them is the same
+    mistake `v_candidate_compliance` (db/schema.sql) exists to undo on the
+    reporting side.
     """
     payload = {
         "max_discount_pct": envelope.max_discount_pct,
         "max_absolute_discount": envelope.max_absolute_discount,
         "excluded_skus": sorted(envelope.excluded_skus),
-        "cooldown_days": envelope.cooldown_days,
-        "max_offers_per_customer_per_month": envelope.max_offers_per_customer_per_month,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def catalog_fingerprint(catalog: Sequence[Mapping[str, object]]) -> str:
+    """Hash of the catalog CONTENT the prompt is built from.
+
+    This is the fix for a real, already-caught failure mode: enriching
+    `_prompt_context` with product names/prices changes what the model is
+    asked, but if the cache key does not change too, every already-recorded
+    cassette entry keeps matching and keeps returning candidates composed in
+    ignorance of the catalog -- tests pass, the demo looks fine, and the
+    feature silently does nothing. Folding a hash of the actual catalog rows
+    into the key means a changed catalog (a new SKU, a repriced product) is
+    caught automatically the moment it changes the SORTED, JSON-serialized
+    row set, with no reliance on a human remembering to bump
+    `PROMPT_VERSION` for every future catalog edit.
+
+    Sorted by `sku` before hashing (independent of the order the query
+    happened to return rows in) so the fingerprint is a function of content
+    alone, not incidental row order.
+    """
+    normalized = sorted(
+        (
+            {"sku": item["sku"], "name": item["name"], "category": item["category"], "price": item["price"]}
+            for item in catalog
+        ),
+        key=lambda item: item["sku"],
+    )
+    payload = json.dumps(normalized, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def cache_key(
@@ -94,17 +163,26 @@ def cache_key(
     segment: Segment,
     rupees_at_risk: float,
     envelope: Envelope,
+    catalog: Sequence[Mapping[str, object]] = (),
 ) -> str:
-    """The cohort key: (opportunity_type, segment, rupees_band, envelope_fingerprint).
+    """The cohort key: (prompt_version, opportunity_type, segment, rupees_band,
+    envelope_fingerprint, catalog_fingerprint).
 
     Deliberately NOT keyed on customer_id or opportunity_id -- candidates are
     a property of the cohort, and the bandit (not the generator) is what
     personalizes the final choice. This is the same "cohort-level, not
     per-customer" boundary SYSTEM_DESIGN.md section 9 draws.
+
+    `catalog` defaults to empty so every call site that does not care about
+    catalog-driven cache invalidation (most of this module's own tests, which
+    are about envelope-fingerprint exclusion behaviour) keeps working
+    unchanged -- only `CandidateGenerator.generate`, which has a real catalog
+    to pass, needs to supply one.
     """
     band_label, _ = rupees_band(rupees_at_risk)
     fp = envelope_fingerprint(envelope)
-    raw = f"{opportunity_type.value}|{segment.value}|{band_label}|{fp}"
+    cfp = catalog_fingerprint(catalog)
+    raw = f"{PROMPT_VERSION}|{opportunity_type.value}|{segment.value}|{band_label}|{fp}|{cfp}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 

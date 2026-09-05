@@ -34,6 +34,13 @@ alone. Once the cell has enough of its own evidence it detaches and samples
 independently. This is recomputable from alpha/beta alone: since both only
 ever move by whole +1 increments away from a prior that is a pure function of
 `action_family`, "how much is prior vs. real evidence" needs no extra column.
+
+`BanditScorer.choose(strategy=...)`: "thompson" (default) samples a Beta
+draw per family and explores; "greedy" scores every family at its posterior
+mean and always returns the current best, deterministically. This is the
+ablation lever PLAN.md section 5 needs to isolate "what learning adds" (Arm
+A, greedy, vs Arm B, Thompson, same candidate shelf) from "what the LLM adds"
+(Arm B vs Arm C, both Thompson, different candidate sources).
 """
 
 from __future__ import annotations
@@ -199,21 +206,32 @@ class BanditScorer:
         }
 
     @staticmethod
-    def _sample_values(
+    def _family_values(
         params: dict[ActionFamily, tuple[float, float, float | None]],
-        rng: np.random.Generator,
+        rng: np.random.Generator | None,
         *,
         fallback_revenue: float,
     ) -> dict[ActionFamily, float]:
-        """One Thompson draw per family, from precomputed (alpha, beta, r_bar)
+        """One scored value per family, from precomputed (alpha, beta, r_bar)
         -- no database access in this function, by design; see `_resolve_params`.
+
+        `rng` is the THOMPSON/GREEDY switch, and the only thing that is: a
+        `np.random.Generator` draws `p ~ Beta(a, b)` per family (Thompson
+        sampling, explores). `rng=None` instead scores every family at its
+        posterior MEAN `a / (a + b)` -- a fixed number given the current
+        posteriors, so the same family wins every time until an outcome moves
+        the posterior itself (greedy argmax, never explores). PLAN.md section 5's
+        whole ablation design rests on this one substitution being the entire
+        difference between arms B and C's *scoring rule*: same candidates, same
+        posteriors, same tie-break, nothing else changes.
+
         `fallback_revenue` (the opportunity's own rupees_at_risk) stands in for
         r_bar on a family with zero observed conversions, so an untested
-        family does not look worthless and go permanently unsampled."""
+        family does not look worthless under either strategy."""
         out = {}
         for fam, (a, b, r_bar) in params.items():
-            p_sample = rng.beta(a, b)
-            out[fam] = p_sample * (r_bar if r_bar is not None else fallback_revenue)
+            p = rng.beta(a, b) if rng is not None else a / (a + b)
+            out[fam] = p * (r_bar if r_bar is not None else fallback_revenue)
         return out
 
     def choose(
@@ -222,22 +240,39 @@ class BanditScorer:
         candidates: list[Candidate],
         *,
         fallback_revenue: float,
+        strategy: str = "thompson",
     ) -> BanditChoice:
-        """Thompson-sample over the DISTINCT families present in `candidates`."""
+        """Score the DISTINCT families present in `candidates` and pick a winner.
+
+        `strategy="thompson"` (default, matches every caller before this
+        parameter existed): one Beta draw per family from `self._rng`.
+        `strategy="greedy"`: the posterior mean, a deterministic function of
+        the current posteriors -- so the same family always wins given the
+        same state, and `propensity` is exactly 1.0 by construction (a
+        deterministic policy assigns probability 1 to whatever it picks; there
+        is nothing to Monte-Carlo estimate). This is Arm A's "constant policy"
+        and Arm B's scoring rule in PLAN.md section 5 -- see `_family_values`.
+        """
+        if strategy not in ("thompson", "greedy"):
+            raise ValueError(f"strategy must be 'thompson' or 'greedy', got {strategy!r}")
         if not candidates:
             raise ValueError("choose() requires at least one candidate")
 
         families = sorted({c.action_family for c in candidates}, key=lambda f: f.value)
         params = self._resolve_params(segment, families)
 
-        values = self._sample_values(params, self._rng, fallback_revenue=fallback_revenue)
+        rng = self._rng if strategy == "thompson" else None
+        values = self._family_values(params, rng, fallback_revenue=fallback_revenue)
         best_family = max(values, key=lambda f: values[f])
         # Multiple candidates can share a family; cheapest wins the tie, which
         # maximises margin for the same expected conversion cell.
         same_family = [c for c in candidates if c.action_family == best_family]
         chosen = min(same_family, key=lambda c: c.estimated_cost(fallback_revenue))
 
-        propensity = self._estimate_propensity(params, best_family, fallback_revenue)
+        propensity = (
+            1.0 if strategy == "greedy"
+            else self._estimate_propensity(params, best_family, fallback_revenue)
+        )
         return BanditChoice(candidate=chosen, propensity=propensity)
 
     def _estimate_propensity(

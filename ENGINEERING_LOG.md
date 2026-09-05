@@ -459,3 +459,92 @@ configured secret is rejected the same as a forgery, since the server can't
 tell them apart; a missing `X-Razorpay-Event-Id` header is rejected; and the
 placeholder-secret path still accepts an unsigned request, deliberately,
 during setup.
+
+## 17. Preparing the demo found four things wrong with the measurements
+
+Building the submission demo meant putting every headline number on screen
+and looking at it. Four of them did not survive that.
+
+**The candidate-validity metric was measuring the opposite of what it
+claimed.** The dashboard reported "3% -- candidates stayed inside the
+envelope unassisted", which reads as an LLM that proposes something illegal
+97% of the time. Counted directly: of 313,949 invalidated candidates, the
+number that broke a POLICY rule (discount cap, absolute cap, excluded SKU,
+budget) was **zero**. Every single one was blocked by customer ELIGIBILITY --
+cooldown and the monthly cap -- which invalidates every candidate for that
+customer identically, however good it is, and says nothing whatsoever about
+the model. The number wasn't cosmetically unflattering, it was wrong: it was
+being presented as a model-quality metric while measuring a merchant policy
+setting. Split into `v_candidate_compliance` (db/schema.sql): policy
+compliance, now reported as 100.00%, and eligibility-blocked reported
+separately as what it is.
+
+**The regret curve was grading decisions the bandit never made.** 96.7% of a
+30-day run's decisions are `no_action`s the envelope forced before
+`BanditScorer.choose()` was ever reached. Regret means "how much worse was
+the action you chose"; a decision that was never a choice contributes a fixed
+baseline penalty the bandit cannot improve on, and averaging those in flattens
+the learning signal into a straight line -- 104.4 -> 99.1 rupees/decision
+across the whole run, a 5% slope that looks like nothing happening.
+`demo_regret_curve` now carries both series and the dashboard plots the
+bandit-only one by default.
+
+**Tuning a policy silently reverted the whole system to the greedy argmax of
+bug #11.** `envelope_fingerprint` -- the cassette's cache key -- included
+`cooldown_days` and `max_offers_per_customer_per_month`. Changing either
+changed every key, missed every recorded cohort, and (because a non-strict
+replay falls back to a single templated candidate) produced a run of 55,535
+decisions with one candidate each and propensity 1.0 on every one, while
+printing a *better-looking* regret improvement than the real system: 69%
+versus 17%. A policy experiment silently turned the bandit off and the
+resulting number looked like progress. Two fixes: those two fields are pure
+eligibility gates and no longer belong in a composition cache key (the same
+distinction bug #17's first paragraph is about, arrived at independently from
+the other end), and `revenew demo` now runs with `strict_replay=True` so a
+cassette miss raises instead of degrading quietly. Worth stating plainly: the
+guard that would have caught this existed already and simply wasn't the
+default.
+
+**`revenew demo` and `revenew replay` were broken the moment they were
+installed rather than run from a checkout.** Both import `harness`, which
+wasn't in `[tool.setuptools] packages` -- and a console-script entry point,
+unlike `python -m`, does not put the working directory on `sys.path`. Every
+test passed; the commands were only ever exercised via `python -m`. It would
+have failed live, on camera, on the first command of the demo.
+
+**A budget that runs out mid-experiment doesn't cap spend, it changes what is
+being measured.** With the horizon extended to 90 days, the learning curve
+rose from 11% to 25% truth-optimal through the middle of the run and then
+dropped to *exactly* 0.0% for the last 2,383 decisions -- five consecutive
+buckets, far too clean to be noise -- while regret per decision kept
+*falling*. Both facts at once made no sense until the budget was checked:
+cap 600,000, consumed 599,997, three rupees remaining. `run_replay` scaled
+its default cap by population but not by horizon (a leftover from bug #10,
+which fixed the population half of exactly this mistake), so a 90-day run
+spent a 30-day budget. From exhaustion onward every candidate that cost money
+failed the budget check, only zero-cost candidates survived validation, and
+the bandit could only choose among free actions -- none of which is the
+truth-optimal family for any segment, hence exactly 0%. Regret stayed
+moderate because a free nudge is mediocre rather than catastrophic. The
+system was behaving correctly at every step; the experiment had simply
+stopped asking the question it appeared to be asking. Fixed by scaling the
+cap with `n_days` as well as `n_customers`.
+
+**And the finding underneath all of them: the system was learning the whole
+time, and 30 days was too short to see it.** Outcomes close on a 7-day
+attribution lag, so in a 30-day run most feedback arrives at or after the
+last decision -- the run ends with posteriors that are *correct* (replaying
+the outcome log, the choice policy picks the truth-optimal action 72% of the
+time for ACTIVE, up from 10%) while the decisions the run actually made never
+got to use them. Choice quality across the run was flat: 10.7% / 10.0% /
+11.3% truth-optimal by thirds. At 90 days the loop closes inside the run:
+10.4% -> 16.2% -> 25.9%, with regret falling 78.4 -> 45.2 rupees per decision
+and the reminder-nudge share dropping from 62.8% to 39.5% as evidence
+accumulates. Nothing about the bandit changed. The horizon did. That is also
+the honest answer to "how much data does this need", and it is a more useful
+number than any curve: the cold-start priors plus a 7-day feedback lag mean
+roughly two to three months of a 3,000-customer merchant's volume before the
+policy visibly beats its own starting point. `harness/regret.py`'s
+`learning_curve` now measures this directly -- share of decisions landing on
+the truth-optimal action, against a 20% chance baseline -- because it is
+harder to misread than a rupee curve.

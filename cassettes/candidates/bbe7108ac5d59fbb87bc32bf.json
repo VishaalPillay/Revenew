@@ -1,0 +1,51 @@
+{
+  "candidates": [
+    {
+      "action_family": "percent_discount",
+      "headline": "Save 20% on your next backpack",
+      "discount_pct": 0.2,
+      "discount_amount": null,
+      "skus": [
+        "SKU-C02"
+      ],
+      "rationale": "Cross-sell a complementary accessory to apparel‑buying lapsing customers"
+    },
+    {
+      "action_family": "flat_coupon",
+      "headline": "₹150 off your next hoodie",
+      "discount_pct": null,
+      "discount_amount": 150.0,
+      "skus": [
+        "SKU-A03"
+      ],
+      "rationale": "Incentivize apparel upgrade for lapsing customers"
+    },
+    {
+      "action_family": "bundle_offer",
+      "headline": "Bundle: Classic Tee + Cap for a special price",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [
+        "SKU-A01",
+        "SKU-C01"
+      ],
+      "rationale": "Cross‑sell apparel with an accessory to enhance the outfit"
+    },
+    {
+      "action_family": "loyalty_credit",
+      "headline": "Earn ₹200 loyalty credit with your next purchase",
+      "discount_pct": null,
+      "discount_amount": 200.0,
+      "skus": [],
+      "rationale": "Re‑engage lapsing customers by rewarding future spending"
+    },
+    {
+      "action_family": "reminder_nudge",
+      "headline": "You have items left in your cart",
+      "discount_pct": null,
+      "discount_amount": null,
+      "skus": [],
+      "rationale": "Prompt lapsing customers to complete their purchase"
+    }
+  ]
+}
